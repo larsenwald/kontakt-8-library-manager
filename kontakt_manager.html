@@ -1,0 +1,1283 @@
+<!DOCTYPE html>
+<!-- pywebview: use min_size=(680, 480), recommended size=(960, 640) -->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KLib — Kontakt Library Manager</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:        #0e0f11;
+    --surface:   #141518;
+    --panel:     #1a1c20;
+    --border:    #2a2c32;
+    --border-hi: #3a3d47;
+    --text:      #c8cad0;
+    --text-dim:  #5a5d6a;
+    --text-hi:   #eceef4;
+    --accent:    #00d4aa;
+    --accent-dim:#00d4aa22;
+    --danger:    #ff4757;
+    --danger-dim:#ff475718;
+    --warn:      #ffa502;
+    --mono:      'Space Mono', monospace;
+    --sans:      'DM Sans', sans-serif;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    height: 100vh;
+    min-width: 680px;
+    min-height: 480px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  /* Subtle noise texture overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 999;
+    opacity: 0.4;
+  }
+
+  /* ── TITLEBAR ── */
+  .titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    height: 52px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+    -webkit-app-region: drag;
+  }
+
+  .titlebar-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-mark {
+    width: 28px;
+    height: 28px;
+    background: var(--accent);
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .logo-mark svg { width: 16px; height: 16px; }
+
+  .app-name {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--text-hi);
+    letter-spacing: 0.08em;
+  }
+
+  .app-sub {
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 0.04em;
+  }
+
+  .titlebar-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    -webkit-app-region: no-drag;
+  }
+
+  .db-path {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    max-width: clamp(80px, 20vw, 300px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .btn-load {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--accent);
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    border-radius: 4px;
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: all 0.15s;
+    -webkit-app-region: no-drag;
+  }
+  .btn-load:hover { background: #00d4aa33; }
+
+  /* ── LAYOUT ── */
+  .main {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  /* ── SIDEBAR ── */
+  .sidebar {
+    width: clamp(200px, 28%, 300px);
+    flex-shrink: 0;
+    border-right: 1px solid var(--border);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sidebar-header {
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .sidebar-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+
+  .btn-refresh {
+    font-size: 14px;
+    color: var(--text-dim);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+    transition: all 0.15s;
+    line-height: 1;
+  }
+  .btn-refresh:hover { color: var(--accent); background: var(--accent-dim); }
+  .btn-refresh.spinning { animation: spin 0.6s linear infinite; }
+
+  .lib-count {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--accent);
+    background: var(--accent-dim);
+    border-radius: 10px;
+    padding: 2px 8px;
+  }
+
+  .lib-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 0;
+  }
+
+  .lib-list::-webkit-scrollbar { width: 4px; }
+  .lib-list::-webkit-scrollbar-track { background: transparent; }
+  .lib-list::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+
+  .lib-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 20px;
+    cursor: pointer;
+    transition: background 0.1s;
+    border-left: 2px solid transparent;
+    position: relative;
+  }
+
+  .lib-item:hover { background: var(--panel); }
+
+  .lib-item.active {
+    background: var(--panel);
+    border-left-color: var(--accent);
+  }
+
+  .lib-item.protected {
+    border-left-color: var(--border);
+  }
+
+  .lib-index {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    width: 18px;
+    flex-shrink: 0;
+  }
+
+  .lib-info { flex: 1; min-width: 0; }
+
+  .lib-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-hi);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lib-item.protected .lib-name { color: var(--text-dim); }
+
+  .lib-vendor {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .lib-badge {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    padding: 2px 6px;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+
+  .badge-native {
+    color: var(--text-dim);
+    background: var(--border);
+  }
+
+  .badge-user {
+    color: var(--accent);
+    background: var(--accent-dim);
+  }
+
+  /* ── DETAIL PANEL ── */
+  .detail {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  /* Empty state */
+  .empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    color: var(--text-dim);
+  }
+
+  .empty-icon {
+    width: 64px;
+    height: 64px;
+    border: 2px solid var(--border);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0.5;
+  }
+
+  .empty-state p {
+    font-family: var(--mono);
+    font-size: 12px;
+    letter-spacing: 0.06em;
+  }
+
+  /* Detail content */
+  .detail-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: fadeIn 0.2s ease;
+  }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .detail-hero {
+    padding: 28px 32px 24px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel);
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+  }
+
+  .detail-hero::before {
+    content: attr(data-product-id);
+    position: absolute;
+    right: 24px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-family: var(--mono);
+    font-size: clamp(32px, 6vw, 72px);
+    font-weight: 700;
+    color: var(--border);
+    letter-spacing: -0.02em;
+    pointer-events: none;
+    max-width: 40%;
+    overflow: hidden;
+    text-overflow: clip;
+    white-space: nowrap;
+  }
+
+  .detail-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+
+  .detail-name {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-hi);
+    letter-spacing: -0.01em;
+    margin-bottom: 4px;
+  }
+
+  .detail-alias {
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+
+  .detail-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: clamp(16px, 3vw, 28px) clamp(20px, 4vw, 40px);
+  }
+
+  .detail-body::-webkit-scrollbar { width: 4px; }
+  .detail-body::-webkit-scrollbar-track { background: transparent; }
+  .detail-body::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+
+  .info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 1px;
+    background: var(--border);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 24px;
+  }
+
+  .info-cell {
+    background: var(--panel);
+    padding: 16px 20px;
+  }
+
+  .info-cell.full { grid-column: 1 / -1; }
+
+  .info-cell-label {
+    font-family: var(--mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+
+  .info-cell-value {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-hi);
+    word-break: break-all;
+    line-height: 1.5;
+  }
+
+  .info-cell-value.accent { color: var(--accent); }
+  .info-cell-value.dim { color: var(--text-dim); }
+
+  /* Presets section */
+  .section-title {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .preset-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 200px;
+    overflow-y: auto;
+    margin-bottom: 28px;
+  }
+
+  .preset-list::-webkit-scrollbar { width: 4px; }
+  .preset-list::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+
+  .preset-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 12px;
+    background: var(--panel);
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 11px;
+  }
+
+  .preset-item-name { color: var(--text); flex: 1; }
+  .preset-item-type {
+    color: var(--text-dim);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  /* ── FOOTER / ACTION BAR ── */
+  .detail-footer {
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+    padding: 14px clamp(20px, 4vw, 40px);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .footer-info {
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .footer-info span {
+    color: var(--text);
+    font-family: var(--mono);
+  }
+
+  .btn-delete {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--danger);
+    background: var(--danger-dim);
+    border: 1px solid var(--danger);
+    border-radius: 5px;
+    padding: 10px 24px;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .btn-delete:hover {
+    background: #ff475728;
+    box-shadow: 0 0 16px #ff475730;
+  }
+
+  .btn-delete:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+
+  /* ── CONFIRM MODAL ── */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: #0e0f11cc;
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s;
+  }
+
+  .modal-overlay.visible {
+    opacity: 1;
+    pointer-events: all;
+  }
+
+  .modal {
+    background: var(--panel);
+    border: 1px solid var(--border-hi);
+    border-radius: 12px;
+    width: min(480px, calc(100vw - 48px));
+    box-shadow: 0 32px 80px #00000080;
+    transform: translateY(8px);
+    transition: transform 0.2s;
+  }
+
+  .modal-overlay.visible .modal { transform: translateY(0); }
+
+  .modal-header {
+    padding: 24px 28px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .modal-danger-icon {
+    width: 36px;
+    height: 36px;
+    background: var(--danger-dim);
+    border: 1px solid var(--danger);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--danger);
+    font-size: 18px;
+  }
+
+  .modal-title {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-hi);
+  }
+
+  .modal-subtitle {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-top: 2px;
+    font-family: var(--mono);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 340px;
+  }
+
+  .modal-body { padding: 20px 28px; }
+
+  .modal-warning {
+    background: #ff475710;
+    border: 1px solid #ff475730;
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+  }
+
+  .modal-warning p {
+    font-size: 12px;
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  .modal-warning strong { color: var(--danger); }
+
+  .delete-scope {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+
+  .scope-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+
+  .scope-check {
+    width: 16px;
+    height: 16px;
+    border-radius: 3px;
+    border: 1px solid var(--border-hi);
+    background: var(--surface);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: all 0.1s;
+  }
+
+  .scope-check.checked {
+    background: var(--danger-dim);
+    border-color: var(--danger);
+  }
+
+  .scope-check.checked::after {
+    content: '✓';
+    font-size: 10px;
+    color: var(--danger);
+  }
+
+  .scope-label { cursor: pointer; }
+  .scope-label strong { color: var(--text); }
+
+  .modal-footer {
+    padding: 16px 28px 24px;
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+  }
+
+  .btn-cancel {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    background: transparent;
+    border: 1px solid var(--border-hi);
+    border-radius: 5px;
+    padding: 9px 20px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-cancel:hover { color: var(--text); border-color: var(--text-dim); }
+
+  .btn-confirm-delete {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: #fff;
+    background: var(--danger);
+    border: 1px solid var(--danger);
+    border-radius: 5px;
+    padding: 9px 20px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-confirm-delete:hover { background: #ff2f41; }
+
+  /* ── STATUS TOAST ── */
+  .toast {
+    position: fixed;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%) translateY(16px);
+    background: var(--panel);
+    border: 1px solid var(--border-hi);
+    border-radius: 8px;
+    padding: 12px 20px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-hi);
+    box-shadow: 0 8px 32px #00000060;
+    z-index: 200;
+    opacity: 0;
+    transition: all 0.25s;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    white-space: nowrap;
+  }
+
+  .toast.visible {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+
+  .toast.success { border-color: var(--accent); }
+  .toast.error { border-color: var(--danger); }
+  .toast-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .toast.success .toast-dot { background: var(--accent); }
+  .toast.error .toast-dot { background: var(--danger); }
+
+  /* ── LOADING STATE ── */
+  .loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    z-index: 50;
+    transition: opacity 0.3s;
+  }
+
+  .loading-overlay.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .spinner {
+    width: 32px;
+    height: 32px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+  }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .loading-text {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+  }
+
+  /* ── PROTECTED NOTICE ── */
+  .protected-notice {
+    background: var(--border);
+    border-radius: 6px;
+    padding: 12px 16px;
+    font-size: 12px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  /* ── BANNER (persistent startup message) ── */
+  .banner {
+    padding: 10px 24px;
+    font-size: 12px;
+    font-family: var(--mono);
+    flex-shrink: 0;
+  }
+  .banner.error { background: var(--danger-dim); color: var(--danger); border-bottom: 1px solid #ff475730; }
+  .banner.warn  { background: #ffa50215; color: var(--warn); border-bottom: 1px solid #ffa50230; }
+
+  /* scrollbar for detail body */
+  .detail-body::-webkit-scrollbar { width: 4px; }
+</style>
+</head>
+<body>
+
+<!-- Loading -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="spinner"></div>
+  <div class="loading-text">READING DATABASE...</div>
+</div>
+
+<!-- Titlebar -->
+<div class="titlebar">
+  <div class="titlebar-left">
+    <div class="logo-mark">
+      <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="2" width="5" height="12" rx="1.5" fill="#0e0f11"/>
+        <rect x="9" y="2" width="5" height="7" rx="1.5" fill="#0e0f11"/>
+        <rect x="9" y="11" width="5" height="3" rx="1.5" fill="#0e0f11"/>
+      </svg>
+    </div>
+    <div>
+      <div class="app-name">KLIB</div>
+      <div class="app-sub">Kontakt Library Manager</div>
+    </div>
+  </div>
+  <div class="titlebar-right">
+    <div class="db-path" id="dbPathDisplay">No database loaded</div>
+    <button class="btn-load" onclick="loadDatabase()">LOAD DB</button>
+  </div>
+</div>
+
+<!-- Main -->
+<div class="main">
+
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-title">Libraries</div>
+      <div style="display:flex;align-items:center;gap:8px">
+        <div class="lib-count" id="libCount">0</div>
+        <button class="btn-refresh" onclick="refreshLibraries()" title="Refresh">↻</button>
+      </div>
+    </div>
+    <div class="lib-list" id="libList">
+      <!-- populated by JS -->
+    </div>
+  </div>
+
+  <!-- Detail Panel -->
+  <div class="detail" id="detailPanel">
+    <div class="empty-state" id="emptyState">
+      <div class="empty-icon">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="3" y="3" width="7" height="18" rx="2"/>
+          <rect x="14" y="3" width="7" height="11" rx="2"/>
+          <rect x="14" y="17" width="7" height="4" rx="2"/>
+        </svg>
+      </div>
+      <p>SELECT A LIBRARY TO INSPECT</p>
+    </div>
+    <div class="detail-content" id="detailContent" style="display:none">
+      <!-- populated by JS -->
+    </div>
+  </div>
+
+</div>
+
+<!-- Confirm Modal -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-danger-icon">⚠</div>
+      <div>
+        <div class="modal-title">Confirm Deletion</div>
+        <div class="modal-subtitle" id="modalSubtitle">This action cannot be undone.</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="modal-warning">
+        <p>You are about to permanently remove <strong id="modalLibName">—</strong> from your system. Choose what to delete below.</p>
+        <p style="margin-top:8px; color: var(--text-dim); font-size:11px;">Note: this will not remove the torrent from any download client you used to obtain this library.</p>
+      </div>
+      <div class="delete-scope">
+        <div class="scope-item">
+          <div class="scope-check checked" id="checkDb" onclick="toggleCheck('checkDb')"></div>
+          <div class="scope-label" onclick="toggleCheck('checkDb')"><strong>Database entry</strong> — removes from Kontakt browser</div>
+        </div>
+        <div class="scope-item">
+          <div class="scope-check checked" id="checkFiles" onclick="toggleCheck('checkFiles')"></div>
+          <div class="scope-label" onclick="toggleCheck('checkFiles')"><strong>Sample files on disk</strong> — deletes the library folder</div>
+        </div>
+        <div class="scope-item">
+          <div class="scope-check checked" id="checkCache" onclick="toggleCheck('checkCache')"></div>
+          <div class="scope-label" onclick="toggleCheck('checkCache')"><strong>Cache files</strong> — clears LibrariesCache entries</div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeModal()">CANCEL</button>
+      <button class="btn-confirm-delete" onclick="confirmDelete()">DELETE LIBRARY</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast">
+  <div class="toast-dot"></div>
+  <span id="toastMsg"></span>
+</div>
+
+<!-- Banner (persistent, for startup errors) -->
+<div class="banner" id="banner" style="display:none">
+  <span id="bannerMsg"></span>
+</div>
+
+<script>
+  // ── STATE ──
+  let libraries = [];
+  let selectedId = null;
+  let pendingDeleteId = null;
+
+  // ── MOCK DATA (replace with window.pywebview.api calls) ──
+  const MOCK_LIBRARIES = [
+    {
+      id: 1, alias: 'Native Instruments User Content', path: 'C:\\Users\\Larsenwald\\Documents\\Native Instruments\\User Content',
+      product_id: null, upid: null, state: 1, product_version: '0.0.0.0',
+      preset_count: 0, is_native: true
+    },
+    {
+      id: 2, alias: 'Kontakt 8 Factory Content', path: 'C:\\Program Files\\Common Files\\Native Instruments\\Kontakt 8\\Content',
+      product_id: 'KP8', upid: '0e504595-40d8-4982-978e-a242f036912d', state: 2, product_version: '3.0.0.0',
+      preset_count: 0, is_native: true
+    },
+    {
+      id: 8, alias: 'Bodhrans and Bones', path: 'C:\\Users\\Larsenwald\\Sample Library Torrents\\Red.Room.Audio.Traveler.Series.Bodhrans.And.Bones\\Red_Room_Audio_Traveler_Series_Bodhrans_And_Bones_(KONTAKT)',
+      product_id: '30a', upid: 'c198c15d-d414-4504-8f03-f0c5590cb979', state: 2, product_version: '1.0.0.0',
+      preset_count: 18, is_native: false, vendor: 'Red Room Audio'
+    },
+    {
+      id: 9, alias: 'Ethno World 6 Instruments', path: 'C:\\Users\\Larsenwald\\Sample Library Torrents\\Ethno World 6\\Ethno World 6 - Instruments Library',
+      product_id: '027', upid: '4e002ba5-0e5c-438d-ab58-599885070d7e', state: 2, product_version: '1.0.0.0',
+      preset_count: 312, is_native: false, vendor: 'Best Service'
+    },
+    {
+      id: 11, alias: 'Ferrum', path: 'D:\\Sample Library Torrents\\Keepforest Ferrum FULL\\Keepforest Ferrum',
+      product_id: 'W49', upid: '56101105-f542-4166-9b2c-ab3c881f5797', state: 2, product_version: '1.0.0.0',
+      preset_count: 87, is_native: false, vendor: 'Keepforest'
+    },
+    {
+      id: 12, alias: 'Jaeger', path: 'D:\\Sample Library Torrents\\Jaeger 1.4.1 [Audio Imperia]',
+      product_id: 'V26', upid: 'c851d997-7f6d-4e79-b01a-d7111ddade4c', state: 2, product_version: '1.4.1.0',
+      preset_count: 143, is_native: false, vendor: 'Audio Imperia'
+    },
+    {
+      id: 13, alias: 'The Grandeur', path: 'D:\\Sample Library Torrents\\The Grandeur v 1.2.0',
+      product_id: '487', upid: 'e612c6f8-d7ea-428c-ab30-6059c7797d16', state: 2, product_version: '1.2.0.0',
+      preset_count: 6, is_native: false, vendor: 'Native Instruments'
+    },
+    {
+      id: 14, alias: 'Chorus', path: 'D:\\Sample Library Torrents\\Audio Imperia CHORUS',
+      product_id: 'K38', upid: '5358fab5-3fb2-44ca-960c-bbae1085bac1', state: 2, product_version: '1.0.0.0',
+      preset_count: 42, is_native: false, vendor: 'Audio Imperia'
+    },
+    {
+      id: 15, alias: 'Solo', path: 'D:\\Sample Library Torrents\\Solo',
+      product_id: 'Y13', upid: '401548d4-bd0c-44ab-8c69-1ddce84e375b', state: 2, product_version: '1.0.0.0',
+      preset_count: 31, is_native: false, vendor: null
+    },
+    {
+      id: 16, alias: 'Ancient Greek Percussion', path: 'D:\\Sample Library Torrents\\Soundiron Ancient Greek Percussion',
+      product_id: 'f31', upid: '34022dd2-ac5b-46ff-99fa-2f7f4cc1e30e', state: 2, product_version: '1.0.0.0',
+      preset_count: 24, is_native: false, vendor: 'Soundiron'
+    },
+    {
+      id: 17, alias: 'Joshua Bell Violin', path: 'C:\\Users\\Larsenwald\\Sample Library Torrents\\Embertone - Joshua Bell Violin',
+      product_id: 'P10', upid: '3a64e577-6523-4cb1-ac92-61e0d7795297', state: 2, product_version: '1.0.0.0',
+      preset_count: 19, is_native: false, vendor: 'Embertone'
+    },
+    {
+      id: 18, alias: 'Cinematic Studio Strings', path: 'D:\\Sample Library Torrents\\Cinematic Studio Series - Cinematic Studio Strings',
+      product_id: '079', upid: 'cb4e436a-1084-46e0-94af-3efd39e0dcbd', state: 2, product_version: '1.7.0.0',
+      preset_count: 67, is_native: false, vendor: 'Cinematic Studio'
+    },
+    {
+      id: 19, alias: 'Fantasy', path: 'D:\\Sample Library Torrents\\Fantasy Library',
+      product_id: 'T49', upid: '55d32063-12df-4111-9531-5950db7b027b', state: 2, product_version: '1.0.0.0',
+      preset_count: 55, is_native: false, vendor: null
+    },
+    {
+      id: 20, alias: 'Gravity 2', path: 'D:\\Sample Library Torrents\\Heavyocity Gravity 2',
+      product_id: 'N07', upid: 'c4de6f72-415c-437c-93ae-d0fde861a82f', state: 2, product_version: '1.0.0.0',
+      preset_count: 201, is_native: false, vendor: 'Heavyocity'
+    },
+    {
+      id: 21, alias: 'Ostinato Textures', path: 'D:\\Sample Library Torrents\\Novo Pack 05 - Ostinato Textures [Heavyocity]',
+      product_id: '3H2', upid: '0bb42dd9-1be0-4ef2-ad30-0ff9f6d92e1e', state: 2, product_version: '1.0.0.0',
+      preset_count: 38, is_native: false, vendor: 'Heavyocity'
+    },
+    {
+      id: 22, alias: 'Appex - Modern Trailer Guitar', path: 'D:\\Sample Library Torrents\\Appex - Modern Trailer Guitar 1.1.0 [Keepforest]',
+      product_id: '9d0', upid: 'da985468-2164-4231-93ac-22da22c86fb2', state: 2, product_version: '1.1.0.0',
+      preset_count: 44, is_native: false, vendor: 'Keepforest'
+    },
+    {
+      id: 23, alias: 'FOLDS', path: 'C:\\Users\\Larsenwald\\Sample Library Torrents\\Folds [Void & Vista]',
+      product_id: '0a3', upid: '231b625f-d97a-48af-b8d0-07f2d21196da', state: 2, product_version: '1.0.0.0',
+      preset_count: 29, is_native: false, vendor: 'Void & Vista'
+    },
+    {
+      id: 24, alias: 'Austin Saxes', path: 'D:\\Sample Library Torrents\\Atelier Series - Austin Saxes [Musical Sampling]',
+      product_id: 'a31', upid: 'f9c310b6-7e14-4c6f-b205-aed8b505828d', state: 2, product_version: '1.0.0.0',
+      preset_count: 11, is_native: false, vendor: 'Musical Sampling'
+    },
+    {
+      id: 25, alias: 'Phoenix - Rise Hit and Whoosh Builder', path: 'D:\\Sample Library Torrents\\Phoenix - Rise Hit and Whoosh Builder',
+      product_id: 'Y80', upid: '6298933f-9049-4fdd-af3c-cf7a04b14b52', state: 2, product_version: '1.0.0.0',
+      preset_count: 16, is_native: false, vendor: null
+    },
+    {
+      id: 26, alias: 'Lineage Percussion', path: 'D:\\Sample Library Torrents\\ProjectSAM Lineage Percussion v1.2',
+      product_id: 'N33', upid: '0473de7f-b188-4878-9f96-35b735e602fa', state: 2, product_version: '1.2.0.0',
+      preset_count: 52, is_native: false, vendor: 'ProjectSAM'
+    },
+    {
+      id: 27, alias: 'Ethera Gold Atlantis', path: 'D:\\Sample Library Torrents\\Zero-G Ethera Gold Atlantis',
+      product_id: '3VZ', upid: '99b6508a-cb45-485f-9ee7-9407e00799d4', state: 2, product_version: '1.0.0.0',
+      preset_count: 78, is_native: false, vendor: 'Zero-G'
+    },
+    {
+      id: 28, alias: 'Action Strings 2', path: 'C:\\Users\\Larsenwald\\Sample Library Torrents\\Action Strings 2 v1.2.0',
+      product_id: 'K23', upid: '66a33e76-e15a-433f-96fe-721904ee279b', state: 2, product_version: '1.2.0.0',
+      preset_count: 95, is_native: false, vendor: 'Native Instruments'
+    },
+    {
+      id: 29, alias: 'Cinematic Studio Brass', path: 'D:\\Sample Library Torrents\\Cinematic Studio Brass',
+      product_id: 'Q46', upid: '453f5b2f-d12f-4d56-9d65-4bc1ee6979e9', state: 2, product_version: '1.0.0.0',
+      preset_count: 48, is_native: false, vendor: 'Cinematic Studio'
+    },
+    {
+      id: 30, alias: 'Palette', path: 'D:\\Sample Library Torrents\\Palette Orchestra Complete 1.0.2 [Impact Soundworks]',
+      product_id: 'P37', upid: 'a223ee83-10b5-40a4-a964-7c3d4f62fd29', state: 2, product_version: '1.0.2.0',
+      preset_count: 134, is_native: false, vendor: 'Impact Soundworks'
+    },
+    {
+      id: 31, alias: 'The Deer and the Guitar', path: 'C:\\Users\\Public\\Documents\\The Deer and the Guitar',
+      product_id: 'GAF', upid: '3f4c44ae-2d25-4590-a992-01d9677c5aae', state: 2, product_version: '1.0.0.0',
+      preset_count: 7, is_native: false, vendor: null
+    },
+  ];
+
+  function refreshLibraries() {
+    const btn = document.querySelector('.btn-refresh');
+    btn.classList.add('spinning');
+    window.pywebview.api.init().then(result => {
+      btn.classList.remove('spinning');
+      handleLoadResult(result);
+      // Clear selection since list is refreshed
+      selectedId = null;
+      document.getElementById('emptyState').style.display = 'flex';
+      document.getElementById('detailContent').style.display = 'none';
+    });
+  }
+
+  // ── INIT ──
+  window.addEventListener('DOMContentLoaded', () => {
+    // Wait for pywebview to be ready, then auto-detect db
+    const tryInit = () => {
+      if (window.pywebview && window.pywebview.api) {
+        window.pywebview.api.init().then(handleLoadResult);
+      } else {
+        setTimeout(tryInit, 50);
+      }
+    };
+    tryInit();
+  });
+
+  function loadDatabase() {
+    document.getElementById('loadingOverlay').classList.remove('hidden');
+    window.pywebview.api.pick_database().then(handleLoadResult);
+  }
+
+  function handleLoadResult(result) {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+
+    if (result.locked) {
+      showBanner('Kontakt is currently open. Close it before using KLib.', 'error');
+      return;
+    }
+    if (!result.found) {
+      showBanner('Kontakt 8 database not found. Use LOAD DB to locate it manually.', 'warn');
+      return;
+    }
+    if (result.error) {
+      showBanner(`Error reading database: ${result.error}`, 'error');
+      return;
+    }
+
+    const shortPath = result.db_path.split('\\').slice(-3).join('\\');
+    document.getElementById('dbPathDisplay').textContent = shortPath;
+    loadLibraries(result.libraries);
+  }
+
+  function loadLibraries(libs) {
+    libraries = libs;
+    document.getElementById('libCount').textContent = libs.length;
+    renderList();
+  }
+
+  function renderList() {
+    const container = document.getElementById('libList');
+    container.innerHTML = '';
+    let userIdx = 1;
+    libraries.forEach(lib => {
+      const item = document.createElement('div');
+      item.className = 'lib-item' + (lib.is_native ? ' protected' : '') + (lib.id === selectedId ? ' active' : '');
+      item.onclick = () => selectLibrary(lib.id);
+
+      const badge = lib.is_native
+        ? `<div class="lib-badge badge-native">NI</div>`
+        : `<div class="lib-badge badge-user">USER</div>`;
+
+      const vendor = lib.vendor || inferVendor(lib.path);
+
+      item.innerHTML = `
+        <div class="lib-index">${lib.is_native ? '—' : String(userIdx++).padStart(2,'0')}</div>
+        <div class="lib-info">
+          <div class="lib-name">${lib.alias}</div>
+          <div class="lib-vendor">${vendor || 'Unknown vendor'}</div>
+        </div>
+        ${badge}
+      `;
+      container.appendChild(item);
+    });
+  }
+
+  function selectLibrary(id) {
+    selectedId = id;
+    renderList();
+    const lib = libraries.find(l => l.id === id);
+    if (!lib) return;
+
+    document.getElementById('emptyState').style.display = 'none';
+    const content = document.getElementById('detailContent');
+    content.style.display = 'flex';
+    content.style.flexDirection = 'column';
+
+    const vendor = lib.vendor || inferVendor(lib.path);
+    const canDelete = !lib.is_native;
+    const driveLabel = lib.path.startsWith('D:') ? 'D:' : lib.path.startsWith('C:') ? 'C:' : lib.path.substring(0,2);
+
+    content.innerHTML = `
+      <div class="detail-hero" data-product-id="${lib.product_id || ''}">
+        <div class="detail-label">REGISTERED LIBRARY</div>
+        <div class="detail-name">${lib.alias}</div>
+        <div class="detail-alias">${vendor ? vendor + ' · ' : ''}v${lib.product_version}</div>
+      </div>
+      <div class="detail-body">
+        <div class="info-grid">
+          <div class="info-cell full">
+            <div class="info-cell-label">Library Path</div>
+            <div class="info-cell-value">${lib.path}</div>
+          </div>
+          <div class="info-cell">
+            <div class="info-cell-label">Database ID</div>
+            <div class="info-cell-value accent">${lib.id}</div>
+          </div>
+          <div class="info-cell">
+            <div class="info-cell-label">Product ID</div>
+            <div class="info-cell-value accent">${lib.product_id || '—'}</div>
+          </div>
+          <div class="info-cell">
+            <div class="info-cell-label">Presets Indexed</div>
+            <div class="info-cell-value">${lib.preset_count}</div>
+          </div>
+          <div class="info-cell">
+            <div class="info-cell-label">Drive</div>
+            <div class="info-cell-value">${driveLabel}</div>
+          </div>
+          <div class="info-cell full">
+            <div class="info-cell-label">UUID</div>
+            <div class="info-cell-value dim">${lib.upid || '—'}</div>
+          </div>
+        </div>
+
+        ${canDelete ? '' : `
+          <div class="protected-notice">
+            🔒 &nbsp; This is a protected Native Instruments library and cannot be removed through this tool.
+          </div>
+        `}
+      </div>
+      <div class="detail-footer">
+        <div class="footer-info">
+          <span>${lib.preset_count}</span> presets · <span>${lib.product_id || 'no product id'}</span>
+        </div>
+        <button class="btn-delete" onclick="openModal(${lib.id})" ${canDelete ? '' : 'disabled'}>
+          <span>⚠</span> REMOVE LIBRARY
+        </button>
+      </div>
+    `;
+  }
+
+  function inferVendor(path) {
+    const knownVendors = ['Audio Imperia','Heavyocity','Keepforest','Soundiron','ProjectSAM','Embertone','Spitfire','Output','Zero-G','Musical Sampling'];
+    for (const v of knownVendors) {
+      if (path.toLowerCase().includes(v.toLowerCase())) return v;
+    }
+    return null;
+  }
+
+  // ── MODAL ──
+  function openModal(id) {
+    pendingDeleteId = id;
+    const lib = libraries.find(l => l.id === id);
+    document.getElementById('modalLibName').textContent = lib.alias;
+    document.getElementById('modalSubtitle').textContent = lib.path;
+    // Reset checkboxes
+    ['checkDb','checkFiles','checkCache'].forEach(id => {
+      document.getElementById(id).classList.add('checked');
+    });
+    document.getElementById('modalOverlay').classList.add('visible');
+  }
+
+  function closeModal() {
+    document.getElementById('modalOverlay').classList.remove('visible');
+    pendingDeleteId = null;
+  }
+
+  function toggleCheck(id) {
+    document.getElementById(id).classList.toggle('checked');
+  }
+
+  function confirmDelete() {
+    const lib = libraries.find(l => l.id === pendingDeleteId);
+    const libId = pendingDeleteId;
+    const deleteDb    = document.getElementById('checkDb').classList.contains('checked');
+    const deleteFiles = document.getElementById('checkFiles').classList.contains('checked');
+    const deleteCache = document.getElementById('checkCache').classList.contains('checked');
+
+    closeModal();
+    document.getElementById('loadingOverlay').classList.remove('hidden');
+    document.getElementById('loadingOverlay').querySelector('.loading-text').textContent = 'REMOVING LIBRARY...';
+
+    window.pywebview.api.delete_library(lib.id, deleteDb, deleteFiles, deleteCache)
+      .then(result => {
+        document.getElementById('loadingOverlay').classList.add('hidden');
+        document.getElementById('loadingOverlay').querySelector('.loading-text').textContent = 'READING DATABASE...';
+
+        if (result.success) {
+          libraries = libraries.filter(l => l.id !== libId);
+          selectedId = null;
+          document.getElementById('emptyState').style.display = 'flex';
+          document.getElementById('detailContent').style.display = 'none';
+          document.getElementById('libCount').textContent = libraries.length;
+          renderList();
+          showToast(`${lib.alias} removed successfully`, 'success');
+        } else {
+          showToast(result.message, 'error');
+        }
+      });
+  }
+
+  // ── BANNER ──
+  function showBanner(msg, type = 'error') {
+    const banner = document.getElementById('banner');
+    document.getElementById('bannerMsg').textContent = msg;
+    banner.className = `banner ${type}`;
+    banner.style.display = 'block';
+    // Insert banner after titlebar
+    document.querySelector('.titlebar').after(banner);
+    document.getElementById('loadingOverlay').classList.add('hidden');
+  }
+
+  // ── TOAST ──
+  function showToast(msg, type = 'success') {
+    const toast = document.getElementById('toast');
+    document.getElementById('toastMsg').textContent = msg;
+    toast.className = `toast ${type} visible`;
+    setTimeout(() => toast.classList.remove('visible'), 3000);
+  }
+
+  // Close modal on overlay click
+  document.getElementById('modalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+  });
+</script>
+</body>
+</html>
