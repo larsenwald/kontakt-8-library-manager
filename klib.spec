@@ -41,6 +41,7 @@ exe = EXE(
     strip=False,
     upx=True,
     console=False,          # no terminal window
+    uac_admin=True,         # removing HKLM library registration needs admin
     onefile=True,           # single portable .exe
     icon=None,              # swap in an .ico file here if you have one
 )

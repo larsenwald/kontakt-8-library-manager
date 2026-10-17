@@ -6,6 +6,7 @@ import os
 import glob
 import shutil
 import apsw
+from cleanup import remove_remnants
 
 
 LIBRARIES_CACHE_DIR = "LibrariesCache"
@@ -56,6 +57,14 @@ def _open(db_path):
 def _checkpoint(conn):
     """Merge WAL into main db file before any read/write."""
     conn.cursor().execute("PRAGMA wal_checkpoint(TRUNCATE)")
+
+
+def _repair_fts(cur):
+    """Rebuild the f_sound_info FTS index if it has drifted out of sync with its content."""
+    try:
+        cur.execute("INSERT INTO f_sound_info(f_sound_info, rank) VALUES('integrity-check', 1)")
+    except apsw.CorruptError:
+        cur.execute("INSERT INTO f_sound_info(f_sound_info) VALUES('rebuild')")
 
 
 def get_libraries(db_path):
@@ -132,60 +141,69 @@ def delete_library(db_path, lib_id, delete_db=True, delete_files=False, delete_c
 
         # Rebuild any broken indexes before attempting writes
         cur.execute("REINDEX")
+        _repair_fts(cur)
 
         # Fetch the library row first
         rows = list(cur.execute(
-            "SELECT path, product_id, alias FROM k_content_path WHERE id = ?", (lib_id,)
+            "SELECT path, product_id, alias, upid FROM k_content_path WHERE id = ?", (lib_id,)
         ))
         if not rows:
             return {"success": False, "message": f"Library ID {lib_id} not found.", "details": []}
 
-        lib_path, product_id, alias = rows[0]
+        lib_path, product_id, alias, upid = rows[0]
 
         # ── 1. Delete database entries ──
         if delete_db:
+            # Registration first: if the HKLM key survives, Kontakt re-adds the library on launch
+            ok, reg_details = remove_remnants(lib_path, product_id, upid)
+            details.extend(reg_details)
+            if not ok:
+                return {
+                    "success": False,
+                    "message": reg_details[-1].lstrip("✗ ") + ". Nothing was deleted.",
+                    "details": details
+                }
+
             # Get all sound_info IDs for this library (needed for junction tables)
             sound_ids = [r[0] for r in cur.execute(
                 "SELECT id FROM k_sound_info WHERE content_path_id = ?", (lib_id,)
             )]
 
-            if sound_ids:
-                placeholders = ",".join("?" * len(sound_ids))
+            # One transaction: a failure part-way rolls back instead of leaving half-deleted rows
+            with conn:
+                if sound_ids:
+                    placeholders = ",".join("?" * len(sound_ids))
 
-                # Delete category/mode junction rows
-                cur.execute(f"DELETE FROM k_sound_info_category WHERE sound_info_id IN ({placeholders})", sound_ids)
-                cur.execute(f"DELETE FROM k_sound_info_mode WHERE sound_info_id IN ({placeholders})", sound_ids)
+                    # Delete category/mode junction rows.
+                    # The f_sound_info FTS index is maintained by Kontakt's triggers — never
+                    # delete from it directly, or the index desyncs and reports "malformed".
+                    cur.execute(f"DELETE FROM k_sound_info_category WHERE sound_info_id IN ({placeholders})", sound_ids)
+                    cur.execute(f"DELETE FROM k_sound_info_mode WHERE sound_info_id IN ({placeholders})", sound_ids)
 
-                # Delete FTS index rows
-                try:
-                    cur.execute(f"DELETE FROM f_sound_info WHERE rowid IN ({placeholders})", sound_ids)
-                except Exception:
-                    pass  # FTS table may not support direct delete on all builds
+                    # Delete from all preset tables
+                    for table in PRESET_TABLES:
+                        try:
+                            cur.execute(f"DELETE FROM {table} WHERE content_path_id = ?", (lib_id,))
+                        except apsw.SQLError:
+                            pass  # table may not exist in every db version
 
-                # Delete from all preset tables
-                for table in PRESET_TABLES:
-                    try:
-                        cur.execute(f"DELETE FROM {table} WHERE content_path_id = ?", (lib_id,))
-                    except Exception:
-                        pass
+                    # Delete bank_chain rows unique to this library
+                    bc_ids = [r[0] for r in cur.execute(
+                        "SELECT DISTINCT bank_chain_id FROM k_sound_info WHERE content_path_id = ?", (lib_id,)
+                    )]
+                    for bc_id in bc_ids:
+                        shared = list(cur.execute(
+                            "SELECT COUNT(*) FROM k_sound_info WHERE bank_chain_id = ? AND content_path_id != ?",
+                            (bc_id, lib_id)
+                        ))[0][0]
+                        if shared == 0:
+                            cur.execute("DELETE FROM k_bank_chain WHERE id = ?", (bc_id,))
 
-                # Delete bank_chain rows unique to this library
-                bc_ids = [r[0] for r in cur.execute(
-                    "SELECT DISTINCT bank_chain_id FROM k_sound_info WHERE content_path_id = ?", (lib_id,)
-                )]
-                for bc_id in bc_ids:
-                    shared = list(cur.execute(
-                        "SELECT COUNT(*) FROM k_sound_info WHERE bank_chain_id = ? AND content_path_id != ?",
-                        (bc_id, lib_id)
-                    ))[0][0]
-                    if shared == 0:
-                        cur.execute("DELETE FROM k_bank_chain WHERE id = ?", (bc_id,))
+                    # Delete main sound_info rows
+                    cur.execute(f"DELETE FROM k_sound_info WHERE content_path_id = ?", (lib_id,))
 
-                # Delete main sound_info rows
-                cur.execute(f"DELETE FROM k_sound_info WHERE content_path_id = ?", (lib_id,))
-
-            # Delete the library entry itself
-            cur.execute("DELETE FROM k_content_path WHERE id = ?", (lib_id,))
+                # Delete the library entry itself
+                cur.execute("DELETE FROM k_content_path WHERE id = ?", (lib_id,))
 
             # Checkpoint again to flush WAL after writes
             _checkpoint(conn)

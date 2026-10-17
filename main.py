@@ -3,10 +3,13 @@ main.py — KLib entry point
 Launches a pywebview window and exposes the Python API to the HTML frontend.
 """
 
+import ctypes
 import os
+import subprocess
 import sys
 import webview
 from db import get_libraries, delete_library, default_db_path, is_kontakt_running
+from cleanup import is_admin
 
 
 def resource_path(relative):
@@ -98,7 +101,23 @@ class KLibAPI:
         return total
 
 
+def relaunch_as_admin():
+    """Re-run this process elevated (UAC prompt). Removing a library's HKLM registration needs admin."""
+    if getattr(sys, "frozen", False):
+        args = sys.argv[1:]
+    else:
+        args = [os.path.abspath(sys.argv[0])] + sys.argv[1:]
+    params = subprocess.list2cmdline(args)
+    # ShellExecuteW returns > 32 on success
+    return ctypes.windll.shell32.ShellExecuteW(None, "runas", sys.executable, params, None, 1) > 32
+
+
 def main():
+    if not is_admin():
+        if relaunch_as_admin():
+            return
+        # UAC declined — run anyway; deletes will report that admin is required
+
     api = KLibAPI()
     html_path = resource_path("kontakt_manager.html")
 
