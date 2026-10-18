@@ -10,12 +10,12 @@ import sqlite3
 import subprocess
 import sys
 import webview
-from artwork import (ArtworkError, apply_artwork, prepare_image, read_artwork, reapply_overrides,
-                     rename_artwork, source_info)
+from artwork import (ArtworkError, adopt_artwork, apply_artwork, has_images, header_color, prepare_image,
+                     read_artwork, reapply_overrides, rename_artwork, source_info, thumbnail)
 from db import browser_name, get_libraries, delete_library, default_db_path, is_kontakt_running, set_bank_name
 from patches import scan_library, set_library_name, summarize
 from cleanup import is_admin
-from register import check_new_library, inspect_folder, register_library, suggest_snpid
+from register import check_new_library, inspect_folder, installed_products, register_library, suggest_snpid
 from nicnt import NicntError, generate_nicnt
 
 
@@ -58,7 +58,7 @@ class KLibAPI:
             except (OSError, sqlite3.Error):
                 pass
             try:
-                libs = get_libraries(path)
+                libs = self._overview(get_libraries(path))
                 return {"found": True, "db_path": path, "locked": False, "libraries": libs}
             except Exception as e:
                 return {"found": True, "db_path": path, "locked": False, "libraries": [], "error": str(e)}
@@ -81,7 +81,7 @@ class KLibAPI:
         if locked:
             return {"found": True, "db_path": path, "locked": True, "libraries": []}
         try:
-            libs = get_libraries(path)
+            libs = self._overview(get_libraries(path))
             return {"found": True, "db_path": path, "locked": False, "libraries": libs}
         except Exception as e:
             return {"found": True, "db_path": path, "locked": False, "libraries": [], "error": str(e)}
@@ -252,6 +252,59 @@ class KLibAPI:
                            f"({updated} updated in Kontakt's database).",
                 "details": details + [f"Originals backed up to {renamed['backup_dir']}"]}
 
+    # ── Library list extras: real company, folder status, thumbnail ──
+    def _overview(self, libs):
+        products = installed_products()
+        by_upid, by_snpid = {}, {}
+        for p in products:  # installed products come first and win over the catalogue
+            if p["upid"]:
+                by_upid.setdefault(p["upid"], p)
+            if p["snpid"]:
+                by_snpid.setdefault(p["snpid"], p)
+        for lib in libs:
+            product = by_upid.get((lib["upid"] or "").lower()) or by_snpid.get((lib["product_id"] or "").upper())
+            lib["company"] = product["company"] if product else ""
+            lib["folder_exists"] = os.path.isdir(lib["path"])
+            name = lib["browser_name"] or lib["alias"]
+            try:
+                lib["thumb"] = None if lib["is_native"] else thumbnail(name)
+                lib["header_color"] = header_color(name)
+                # Artwork filed under another of the library's names is invisible to Kontakt
+                lib["stray_artwork"] = None
+                if not lib["is_native"] and lib["browser_name"] and not has_images(name):
+                    for other in (lib["alias"], product["reg_key"] if product else None):
+                        if other and other.lower() != name.lower() and has_images(other):
+                            lib["stray_artwork"] = other
+                            break
+            except (OSError, sqlite3.Error):
+                lib["thumb"], lib["header_color"], lib["stray_artwork"] = None, None, None
+        return libs
+
+    def adopt_artwork(self, lib_id):
+        """Copy artwork filed under another of the library's names to its browser folder name."""
+        if not self._db_path:
+            return {"success": False, "message": "No database loaded.", "details": []}
+        if is_kontakt_running(self._db_path):
+            return {"success": False, "message": "Kontakt is open. Close it before changing artwork.",
+                    "details": [], "kontakt_open": True}
+        lib = next((l for l in self._overview(get_libraries(self._db_path)) if l["id"] == lib_id), None)
+        if not lib or not lib.get("stray_artwork"):
+            return {"success": False, "message": "No artwork to move for this library.", "details": []}
+        try:
+            details = adopt_artwork(lib["stray_artwork"], lib["browser_name"])
+        except (OSError, sqlite3.Error, ArtworkError) as e:
+            return {"success": False, "message": f"Could not copy the artwork: {e}", "details": []}
+        return {"success": True, "message": f"Artwork now shows for '{lib['browser_name']}'. Reopen Kontakt to see it.",
+                "details": details}
+
+    def open_folder(self, lib_id):
+        """Show the library's folder in Explorer."""
+        lib = next((l for l in get_libraries(self._db_path) if l["id"] == lib_id), None) if self._db_path else None
+        if not lib or not os.path.isdir(lib["path"]):
+            return {"success": False, "message": "Library folder not found."}
+        os.startfile(lib["path"])
+        return {"success": True}
+
     # ── Delete a library ──
     def delete_library(self, lib_id, delete_db, delete_files, delete_cache):
         if not self._db_path:
@@ -312,12 +365,13 @@ def main():
         title="KLib — Kontakt Library Manager",
         url=f"file:///{html_path.replace(os.sep, '/')}",
         js_api=api,
-        width=960,
-        height=640,
+        width=1120,
+        height=720,
         min_size=(680, 480),
         resizable=True,
         frameless=False,
         easy_drag=False,
+        background_color="#0f1013",  # matches the UI, so there's no white flash while it loads
     )
 
     webview.start(debug=False)

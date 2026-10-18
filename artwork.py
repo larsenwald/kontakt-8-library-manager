@@ -271,6 +271,32 @@ def reapply_overrides():
 
 # ── Library-level ──
 
+def thumbnail(name, width=112):
+    """Small WebP data URL of the library's tile (the band Kontakt shows), or None if it has none."""
+    folder = image_folder(name)
+    spec = SLOTS["tile"]
+    for file_name in (spec["file"],) + spec["fallbacks"]:
+        path = os.path.join(folder, file_name)
+        if not os.path.isfile(path):
+            continue
+        try:
+            with Image.open(path) as img:
+                img.load()
+                band = _fit(img.convert("RGB"), TILE_VISIBLE, "cover")
+        except OSError:
+            return None
+        small = band.resize((width, round(width * TILE_VISIBLE[1] / TILE_VISIBLE[0])), Image.LANCZOS)
+        buf = io.BytesIO()
+        small.save(buf, "WEBP", quality=80)
+        return "data:image/webp;base64," + base64.b64encode(buf.getvalue()).decode()
+    return None
+
+
+def header_color(name):
+    color = _read_value("color", name, COLOR_KEYS[0])
+    return ("#" + color.lstrip("#")) if color else None
+
+
 def read_artwork(name):
     """Current artwork for a browser folder name, with previews of how Kontakt shows it."""
     folder = image_folder(name)
@@ -371,6 +397,40 @@ def rename_artwork(old, new):
         entry["name"] = new
         data[new.lower()] = entry
         _save_overrides(data)
+    return details
+
+
+def has_images(name):
+    folder = image_folder(name)
+    return os.path.isdir(folder) and any(
+        os.path.isfile(os.path.join(folder, spec_file))
+        for spec in SLOTS.values() for spec_file in (spec["file"],) + spec["fallbacks"])
+
+
+def adopt_artwork(src_name, dst_name):
+    """
+    Make artwork filed under another name (e.g. a vendor's product name) visible under the library's
+    browser folder name: copy the images and colour / banner-text values (the originals stay, so a
+    vendor reinstall can't break it), recording the values so reapply_overrides keeps them.
+    """
+    details = []
+    src, dst = image_folder(src_name), image_folder(dst_name)
+    if os.path.isdir(src):
+        os.makedirs(dst, exist_ok=True)
+        copied = 0
+        for entry in os.listdir(src):
+            target = os.path.join(dst, entry)
+            if os.path.isfile(os.path.join(src, entry)) and not entry.lower().endswith(".meta") and not os.path.exists(target):
+                shutil.copy2(os.path.join(src, entry), target)
+                copied += 1
+        if copied:
+            details.append(f"✓ Copied {copied} image{'s' if copied != 1 else ''} to '{dst_name}'")
+    for kind, keys, field in (("color", COLOR_KEYS, "color"), ("shortname", SHORTNAME_KEYS, "shortname")):
+        value = _read_value(kind, src_name, keys[0])
+        if value and not _read_value(kind, dst_name, keys[0]):
+            _write_values(kind, dst_name, keys, value)
+            _remember(dst_name, field, value)
+            details.append(f"✓ Copied {'header colour' if kind == 'color' else 'banner text'}")
     return details
 
 

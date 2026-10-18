@@ -14,6 +14,7 @@ from cleanup import remove_remnants
 
 
 LIBRARIES_CACHE_DIR = "LibrariesCache"
+PATCH_EXTS = ("nki", "nkm", "nksn")  # patch types that decide a library's browser folder
 
 # Tables that reference k_content_path.id via content_path_id
 PRESET_TABLES = [
@@ -108,10 +109,16 @@ def get_libraries(db_path):
     for row in rows:
         lib_id, path, content_type, alias, state, product_id, upid, version = row
 
-        # Count presets indexed for this library
-        preset_count = list(cur.execute(
-            "SELECT COUNT(*) FROM k_sound_info WHERE content_path_id = ?", (lib_id,)
-        ))[0][0]
+        # Patches by type, and the browser folders (top-level bank names) they're filed under
+        counts, banks = {}, {}
+        for ext, entry1, n in cur.execute(
+                "SELECT s.file_ext, b.entry1, COUNT(*) FROM k_sound_info s "
+                "LEFT JOIN k_bank_chain b ON b.id = s.bank_chain_id "
+                "WHERE s.content_path_id = ? GROUP BY s.file_ext, b.entry1", (lib_id,)):
+            ext = (ext or "").lower()
+            counts[ext] = counts.get(ext, 0) + n
+            if ext in PATCH_EXTS and entry1 is not None:
+                banks[entry1] = banks.get(entry1, 0) + n
 
         # content_type 1 = NI native (protected), 2 = user library
         is_native = content_type == 1
@@ -124,7 +131,12 @@ def get_libraries(db_path):
             "product_id": product_id or "",
             "upid": upid or "",
             "product_version": version or "1.0.0.0",
-            "preset_count": preset_count,
+            "preset_count": sum(counts.values()),
+            "instruments": counts.get("nki", 0),
+            "multis": counts.get("nkm", 0),
+            "snapshots": counts.get("nksn", 0),
+            "banks": banks,
+            "browser_name": max(banks, key=banks.get) if banks else None,
             "is_native": is_native,
             "vendor": _infer_vendor(path),
         })

@@ -1,29 +1,36 @@
 <!DOCTYPE html>
-<!-- pywebview: use min_size=(680, 480), recommended size=(960, 640) -->
+<!-- pywebview: min_size=(680, 480), default size=(1120, 720) -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>KLib — Kontakt Library Manager</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
+  /* ── TOKENS ── */
   :root {
-    --bg:        #0e0f11;
-    --surface:   #141518;
-    --panel:     #1a1c20;
-    --border:    #2a2c32;
-    --border-hi: #3a3d47;
-    --text:      #c8cad0;
-    --text-dim:  #5a5d6a;
-    --text-hi:   #eceef4;
-    --accent:    #00d4aa;
-    --accent-dim:#00d4aa22;
-    --danger:    #ff4757;
-    --danger-dim:#ff475718;
-    --warn:      #ffa502;
-    --mono:      'Space Mono', monospace;
-    --sans:      'DM Sans', sans-serif;
+    --bg:         #0f1013;
+    --surface:    #15161a;
+    --panel:      #1b1d22;
+    --raised:     #23262c;
+    --border:     #2a2d34;
+    --border-hi:  #3a3e47;
+    --text:       #c9ccd3;
+    --text-dim:   #858a96;
+    --text-hi:    #f2f3f6;
+    --accent:     #00d4aa;
+    --accent-hi:  #2be3bd;
+    --accent-dim: #00d4aa1f;
+    --danger:     #ff5c67;
+    --danger-dim: #ff5c671a;
+    --warn:       #ffb020;
+    --warn-dim:   #ffb0201a;
+    --sans: "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, sans-serif;
+    --display: "Segoe UI Variable Display", "Segoe UI", system-ui, sans-serif;
+    --mono: "Cascadia Mono", "Cascadia Code", Consolas, monospace;
+    --r-sm: 6px;
+    --r: 10px;
+    --r-lg: 14px;
+    --shadow: 0 12px 40px #00000066;
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -32,7 +39,8 @@
     background: var(--bg);
     color: var(--text);
     font-family: var(--sans);
-    font-size: 14px;
+    font-size: 13px;
+    line-height: 1.45;
     height: 100vh;
     min-width: 680px;
     min-height: 480px;
@@ -40,109 +48,162 @@
     flex-direction: column;
     overflow: hidden;
     user-select: none;
+    -webkit-font-smoothing: antialiased;
   }
 
-  /* Subtle noise texture overlay */
-  body::before {
-    content: '';
-    position: fixed;
-    inset: 0;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
-    pointer-events: none;
-    z-index: 999;
-    opacity: 0.4;
+  input, textarea { user-select: text; }
+  button { font-family: inherit; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .dim { color: var(--text-dim); }
+  .mono { font-family: var(--mono); }
+
+  ::-webkit-scrollbar { width: 10px; height: 10px; }
+  ::-webkit-scrollbar-thumb { background: #ffffff1a; border-radius: 10px; border: 3px solid transparent; background-clip: padding-box; }
+  ::-webkit-scrollbar-thumb:hover { background-color: #ffffff2e; }
+  ::-webkit-scrollbar-track { background: transparent; }
+
+  /* ── BUTTONS ── */
+  .btn, .btn-cancel, .btn-confirm-add, .btn-confirm-delete {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1;
+    padding: 9px 16px;
+    border-radius: var(--r-sm);
+    border: 1px solid transparent;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.12s, border-color 0.12s, color 0.12s, filter 0.12s;
   }
 
-  /* ── TITLEBAR ── */
-  .titlebar {
+  .btn-confirm-add, .btn.primary { background: var(--accent); color: #06231c; }
+  .btn-confirm-add:hover, .btn.primary:hover { background: var(--accent-hi); }
+  .btn-cancel, .btn.secondary { background: var(--raised); border-color: var(--border-hi); color: var(--text-hi); }
+  .btn-cancel:hover, .btn.secondary:hover { background: #2b2f36; }
+  .btn-confirm-delete, .btn.danger { background: var(--danger); color: #fff; }
+  .btn-confirm-delete:hover, .btn.danger:hover { filter: brightness(1.08); }
+  .btn.danger-outline { background: transparent; border-color: #ff5c6766; color: var(--danger); }
+  .btn.danger-outline:hover { background: var(--danger-dim); border-color: var(--danger); }
+  .btn.warn { background: var(--warn); color: #2a1a00; }
+  .btn.warn:hover { filter: brightness(1.08); }
+  .btn.ghost { background: transparent; color: var(--text); padding: 7px 10px; }
+  .btn.ghost:hover { background: #ffffff0d; color: var(--text-hi); }
+  .btn.sm { padding: 6px 11px; font-size: 12px; }
+  .btn:disabled, .btn-confirm-add:disabled, .btn-confirm-delete:disabled { opacity: 0.4; cursor: not-allowed; filter: none; }
+
+  .btn-small {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text);
+    background: var(--raised);
+    border: 1px solid var(--border-hi);
+    border-radius: var(--r-sm);
+    padding: 5px 10px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .btn-small:hover { color: var(--text-hi); border-color: #4a4f5a; }
+  .btn-small:disabled { opacity: 0.35; cursor: not-allowed; }
+
+  .icon-btn {
+    width: 32px;
+    height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--r-sm);
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--text);
+    cursor: pointer;
+    font-size: 16px;
+  }
+  .icon-btn:hover, .icon-btn.open { background: #ffffff0f; color: var(--text-hi); }
+
+  kbd {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text-dim);
+    border: 1px solid var(--border-hi);
+    border-bottom-width: 2px;
+    border-radius: 4px;
+    padding: 0 5px;
+  }
+
+  /* ── TOP BAR ── */
+  .topbar {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    padding: 0 24px;
+    gap: 10px;
+    padding: 0 14px 0 18px;
     height: 52px;
     border-bottom: 1px solid var(--border);
     background: var(--surface);
     flex-shrink: 0;
-    -webkit-app-region: drag;
   }
 
-  .titlebar-left {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .logo-mark {
-    width: 28px;
-    height: 28px;
-    background: var(--accent);
-    border-radius: 6px;
+  .brand { display: flex; align-items: center; gap: 10px; margin-right: auto; }
+  .brand-mark {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+    background: linear-gradient(135deg, var(--accent-hi), #00a986);
     display: flex;
     align-items: center;
     justify-content: center;
-    flex-shrink: 0;
   }
+  .brand-mark svg { width: 15px; height: 15px; }
+  .brand-name { font-family: var(--display); font-size: 15px; font-weight: 700; color: var(--text-hi); letter-spacing: 0.01em; }
+  .brand-sub { font-size: 12px; color: var(--text-dim); }
 
-  .logo-mark svg { width: 16px; height: 16px; }
-
-  .app-name {
-    font-family: var(--mono);
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--text-hi);
-    letter-spacing: 0.08em;
+  .menu-wrap { position: relative; }
+  .menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    min-width: 260px;
+    background: var(--panel);
+    border: 1px solid var(--border-hi);
+    border-radius: var(--r);
+    box-shadow: var(--shadow);
+    padding: 6px;
+    z-index: 60;
+    display: none;
   }
-
-  .app-sub {
-    font-size: 11px;
-    color: var(--text-dim);
-    letter-spacing: 0.04em;
-  }
-
-  .titlebar-right {
+  .menu.open { display: block; }
+  .menu button {
+    width: 100%;
     display: flex;
     align-items: center;
-    gap: 16px;
-    -webkit-app-region: no-drag;
-  }
-
-  .db-path {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--text-dim);
-    max-width: clamp(80px, 20vw, 300px);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .btn-load {
-    font-family: var(--mono);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    color: var(--accent);
-    background: var(--accent-dim);
-    border: 1px solid var(--accent);
-    border-radius: 4px;
-    padding: 6px 14px;
+    justify-content: space-between;
+    gap: 12px;
+    background: none;
+    border: none;
+    color: var(--text-hi);
+    font-size: 13px;
+    padding: 8px 10px;
+    border-radius: var(--r-sm);
     cursor: pointer;
-    transition: all 0.15s;
-    -webkit-app-region: no-drag;
+    text-align: left;
   }
-  .btn-load:hover { background: #00d4aa33; }
+  .menu button:hover { background: #ffffff0d; }
+  .menu-sep { height: 1px; background: var(--border); margin: 6px 4px; }
+  .menu-info { font-size: 11px; color: var(--text-dim); padding: 4px 10px 6px; line-height: 1.5; word-break: break-all; }
+  .menu-info .mono { color: var(--text); }
+
+  /* ── BANNER (startup messages) ── */
+  .banner { padding: 9px 18px; font-size: 12px; flex-shrink: 0; }
+  .banner.error { background: var(--danger-dim); color: var(--danger); border-bottom: 1px solid #ff5c6730; }
+  .banner.warn  { background: var(--warn-dim); color: var(--warn); border-bottom: 1px solid #ffb02030; }
 
   /* ── LAYOUT ── */
-  .main {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
-    min-height: 0;
-  }
+  .main { flex: 1; display: flex; overflow: hidden; }
 
-  /* ── SIDEBAR ── */
   .sidebar {
-    width: clamp(200px, 28%, 300px);
+    width: clamp(240px, 30vw, 320px);
     flex-shrink: 0;
     border-right: 1px solid var(--border);
     background: var(--surface);
@@ -151,492 +212,272 @@
     overflow: hidden;
   }
 
-  .sidebar-header {
-    padding: 16px 20px 12px;
-    border-bottom: 1px solid var(--border);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+  .search { position: relative; padding: 12px 12px 8px; }
+  .search input {
+    width: 100%;
+    font-family: var(--sans);
+    font-size: 13px;
+    color: var(--text-hi);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r-sm);
+    padding: 8px 34px 8px 32px;
+    outline: none;
   }
+  .search input:focus { border-color: var(--accent); }
+  .search input::placeholder { color: var(--text-dim); }
+  .search-icon { position: absolute; left: 23px; top: 50%; transform: translateY(-38%); color: var(--text-dim); pointer-events: none; }
+  .search .lib-count { position: absolute; right: 22px; top: 50%; transform: translateY(-38%); font-size: 11px; color: var(--text-dim); }
 
-  .sidebar-title {
-    font-family: var(--mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    color: var(--text-dim);
-    text-transform: uppercase;
-  }
-
-  .btn-refresh {
-    font-size: 14px;
-    color: var(--text-dim);
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    padding: 2px 4px;
-    border-radius: 3px;
-    transition: all 0.15s;
-    line-height: 1;
-  }
-  .btn-refresh:hover { color: var(--accent); background: var(--accent-dim); }
-  .btn-refresh.spinning { animation: spin 0.6s linear infinite; }
-
-  .lib-count {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--accent);
-    background: var(--accent-dim);
-    border-radius: 10px;
-    padding: 2px 8px;
-  }
-
-  .lib-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px 0;
-  }
-
-  .lib-list::-webkit-scrollbar { width: 4px; }
-  .lib-list::-webkit-scrollbar-track { background: transparent; }
-  .lib-list::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+  .lib-list { flex: 1; overflow-y: auto; padding: 0 8px 12px; }
 
   .lib-item {
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 10px 20px;
+    gap: 10px;
+    padding: 7px 8px;
+    border-radius: var(--r);
     cursor: pointer;
-    transition: background 0.1s;
-    border-left: 2px solid transparent;
     position: relative;
+    margin-bottom: 2px;
   }
+  .lib-item:hover { background: #ffffff08; }
+  .lib-item.active { background: var(--raised); box-shadow: inset 0 0 0 1px var(--border-hi); }
 
-  .lib-item:hover { background: var(--panel); }
-
-  .lib-item.active {
-    background: var(--panel);
-    border-left-color: var(--accent);
-  }
-
-  .lib-item.protected {
-    border-left-color: var(--border);
-  }
-
-  .lib-index {
-    font-family: var(--mono);
-    font-size: 10px;
-    color: var(--text-dim);
-    width: 18px;
+  .lib-thumb {
+    width: 56px;
+    height: 27px;
+    border-radius: 5px;
     flex-shrink: 0;
+    object-fit: cover;
+    background: var(--raised);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--display);
+    font-weight: 700;
+    font-size: 12px;
+    color: #ffffffd9;
+    letter-spacing: 0.04em;
+    overflow: hidden;
   }
 
   .lib-info { flex: 1; min-width: 0; }
+  .lib-name { font-size: 13px; font-weight: 600; color: var(--text-hi); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lib-sub { font-size: 11px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  .lib-name {
-    font-size: 13px;
-    font-weight: 500;
-    color: var(--text-hi);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
+  .status-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot.warn { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-dim); }
+  .status-dot.danger { background: var(--danger); box-shadow: 0 0 0 3px var(--danger-dim); }
 
-  .lib-item.protected .lib-name { color: var(--text-dim); }
-
-  .lib-vendor {
+  .group-toggle {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: none;
+    border: none;
+    color: var(--text-dim);
     font-size: 11px;
-    color: var(--text-dim);
-    margin-top: 1px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .lib-badge {
-    font-family: var(--mono);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    padding: 2px 6px;
-    border-radius: 3px;
-    flex-shrink: 0;
-  }
-
-  .badge-native {
-    color: var(--text-dim);
-    background: var(--border);
-  }
-
-  .badge-user {
-    color: var(--accent);
-    background: var(--accent-dim);
-  }
-
-  /* ── DETAIL PANEL ── */
-  .detail {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  /* Empty state */
-  .empty-state {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 16px;
-    color: var(--text-dim);
-  }
-
-  .empty-icon {
-    width: 64px;
-    height: 64px;
-    border: 2px solid var(--border);
-    border-radius: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0.5;
-  }
-
-  .empty-state p {
-    font-family: var(--mono);
-    font-size: 12px;
-    letter-spacing: 0.06em;
-  }
-
-  /* Detail content */
-  .detail-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    animation: fadeIn 0.2s ease;
-  }
-
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(4px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
-  .detail-hero {
-    padding: 28px 32px 24px;
-    border-bottom: 1px solid var(--border);
-    background: var(--panel);
-    position: relative;
-    overflow: hidden;
-    flex-shrink: 0;
-  }
-
-  .detail-hero::before {
-    content: attr(data-product-id);
-    position: absolute;
-    right: 24px;
-    top: 50%;
-    transform: translateY(-50%);
-    font-family: var(--mono);
-    font-size: clamp(32px, 6vw, 72px);
-    font-weight: 700;
-    color: var(--border);
-    letter-spacing: -0.02em;
-    pointer-events: none;
-    max-width: 40%;
-    overflow: hidden;
-    text-overflow: clip;
-    white-space: nowrap;
-  }
-
-  .detail-label {
-    font-family: var(--mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    color: var(--text-dim);
+    font-weight: 600;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
-    margin-bottom: 8px;
-  }
-
-  .detail-name {
-    font-family: var(--mono);
-    font-size: 28px;
-    font-weight: 700;
-    color: var(--text-hi);
-    letter-spacing: -0.01em;
-    margin-bottom: 4px;
-  }
-
-  .detail-alias {
-    font-size: 13px;
-    color: var(--text-dim);
-  }
-
-  .detail-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: clamp(16px, 3vw, 28px) clamp(20px, 4vw, 40px);
-  }
-
-  .detail-body::-webkit-scrollbar { width: 4px; }
-  .detail-body::-webkit-scrollbar-track { background: transparent; }
-  .detail-body::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
-
-  .info-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-    gap: 1px;
-    background: var(--border);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    overflow: hidden;
-    margin-bottom: 24px;
-  }
-
-  .info-cell {
-    background: var(--panel);
-    padding: 16px 20px;
-  }
-
-  .info-cell.full { grid-column: 1 / -1; }
-
-  .info-cell-label {
-    font-family: var(--mono);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.14em;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    margin-bottom: 6px;
-  }
-
-  .info-cell-value {
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--text-hi);
-    word-break: break-all;
-    line-height: 1.5;
-  }
-
-  .info-cell-value.accent { color: var(--accent); }
-  .info-cell-value.dim { color: var(--text-dim); }
-
-  /* Presets section */
-  .section-title {
-    font-family: var(--mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.12em;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    margin-bottom: 12px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .section-title::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background: var(--border);
-  }
-
-  .preset-list {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    max-height: 200px;
-    overflow-y: auto;
-    margin-bottom: 28px;
-  }
-
-  .preset-list::-webkit-scrollbar { width: 4px; }
-  .preset-list::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
-
-  .preset-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 12px;
-    background: var(--panel);
-    border-radius: 4px;
-    font-family: var(--mono);
-    font-size: 11px;
-  }
-
-  .preset-item-name { color: var(--text); flex: 1; }
-  .preset-item-type {
-    color: var(--text-dim);
-    font-size: 9px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  /* ── FOOTER / ACTION BAR ── */
-  .detail-footer {
-    border-top: 1px solid var(--border);
-    background: var(--surface);
-    padding: 14px clamp(20px, 4vw, 40px);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    flex-wrap: wrap;
-    gap: 10px;
-    flex-shrink: 0;
-  }
-
-  .footer-info {
-    font-size: 12px;
-    color: var(--text-dim);
-  }
-
-  .footer-info span {
-    color: var(--text);
-    font-family: var(--mono);
-  }
-
-  .btn-delete {
-    font-family: var(--mono);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: var(--danger);
-    background: var(--danger-dim);
-    border: 1px solid var(--danger);
-    border-radius: 5px;
-    padding: 10px 24px;
+    padding: 14px 8px 6px;
     cursor: pointer;
-    transition: all 0.15s;
+  }
+  .group-toggle:hover { color: var(--text); }
+  .group-toggle .chev { transition: transform 0.15s; display: inline-block; }
+  .group-toggle.open .chev { transform: rotate(90deg); }
+
+  .list-empty { padding: 28px 16px; text-align: center; color: var(--text-dim); font-size: 12px; line-height: 1.6; }
+
+  /* ── DETAIL ── */
+  .detail { flex: 1; overflow-y: auto; position: relative; }
+  .detail-content { max-width: 860px; margin: 0 auto; padding: 0 0 40px; }
+
+  .hero { position: relative; overflow: hidden; border-bottom: 1px solid var(--border); }
+  .hero-bg {
+    position: absolute;
+    inset: -40px;
+    background-size: cover;
+    background-position: center;
+    filter: blur(36px) saturate(1.2);
+    opacity: 0.45;
+  }
+  .hero-bg.plain { filter: none; opacity: 1; }
+  .hero::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, #0f101333 0%, var(--bg) 100%); }
+  .hero-inner { position: relative; z-index: 1; display: flex; align-items: flex-end; gap: 20px; padding: 32px 32px 24px; }
+  .hero-tile {
+    width: 210px;
+    aspect-ratio: 420 / 201;
+    border-radius: var(--r);
+    flex-shrink: 0;
+    object-fit: cover;
+    box-shadow: 0 10px 30px #00000080, 0 0 0 1px #ffffff14;
+    background: var(--raised);
     display: flex;
     align-items: center;
-    gap: 8px;
+    justify-content: center;
+    font-family: var(--display);
+    font-size: 26px;
+    font-weight: 700;
+    color: #ffffffd9;
   }
+  .hero-text { min-width: 0; flex: 1; }
+  .hero-name { font-family: var(--display); font-size: 26px; font-weight: 700; color: var(--text-hi); line-height: 1.15; overflow-wrap: anywhere; }
+  .hero-meta { font-size: 13px; color: var(--text); margin-top: 6px; }
+  .hero-meta .sep { color: var(--text-dim); margin: 0 6px; }
 
-  .btn-delete:hover {
-    background: #ff475728;
-    box-shadow: 0 0 16px #ff475730;
-  }
+  .sections { padding: 20px 32px 0; display: flex; flex-direction: column; gap: 16px; }
 
-  .btn-delete:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-    box-shadow: none;
-  }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 18px 20px; }
+  .card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+  .card-title { font-size: 14px; font-weight: 600; color: var(--text-hi); }
+  .card-sub { font-size: 12px; color: var(--text-dim); margin-top: 2px; }
 
-  /* ── CONFIRM MODAL ── */
+  .alert { display: flex; align-items: center; gap: 14px; border-radius: var(--r-lg); padding: 14px 16px; border: 1px solid; }
+  .alert.warn { background: var(--warn-dim); border-color: #ffb02045; }
+  .alert.danger { background: var(--danger-dim); border-color: #ff5c6745; }
+  .alert.info { background: var(--accent-dim); border-color: #00d4aa45; }
+  .alert.info .alert-icon { color: var(--accent); }
+  .alert-icon { font-size: 18px; flex-shrink: 0; }
+  .alert.warn .alert-icon { color: var(--warn); }
+  .alert.danger .alert-icon { color: var(--danger); }
+  .alert-text { flex: 1; font-size: 13px; color: var(--text-hi); }
+  .alert-text .dim { display: block; font-size: 12px; margin-top: 2px; }
+
+  .preview-grid { display: grid; grid-template-columns: minmax(150px, 210px) 1fr; gap: 14px 18px; align-items: start; }
+  .preview-label { font-size: 11px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
+  .pv-tile, .pv-banner, .pv-header { background: #2b2b2b; border-radius: var(--r-sm); overflow: hidden; display: flex; align-items: center; color: var(--text-hi); }
+  .pv-tile { aspect-ratio: 420 / 201; justify-content: center; color: var(--text-dim); font-size: 12px; }
+  .pv-banner { aspect-ratio: 1280 / 212; justify-content: center; font-size: 15px; }
+  .pv-header { height: 44px; padding: 0 0 0 6px; font-size: 13px; }
+  .pv-tile img, .pv-banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .pv-header img { height: 35px; display: block; }
+  .pv-header.text-only { padding-left: 12px; }
+  .preview-right { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 10px 16px; font-size: 13px; }
+  .kv dt { color: var(--text-dim); }
+  .kv dd { color: var(--text-hi); min-width: 0; overflow-wrap: anywhere; }
+  .kv dd.mono { font-size: 12px; }
+
+  details.card > summary { list-style: none; cursor: pointer; display: flex; align-items: center; justify-content: space-between; }
+  details.card > summary::-webkit-details-marker { display: none; }
+  details.card > summary .chev { color: var(--text-dim); transition: transform 0.15s; }
+  details.card[open] > summary .chev { transform: rotate(90deg); }
+  details.card[open] > summary { margin-bottom: 14px; }
+
+  .folder-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+  .folder-name { color: var(--text-hi); font-weight: 600; }
+
+  .danger-zone { display: flex; align-items: center; justify-content: space-between; gap: 16px; border-color: #ff5c6733; }
+
+  .notice { font-size: 13px; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: var(--r-lg); padding: 14px 16px; }
+
+  /* ── EMPTY STATE ── */
+  .empty-state { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; padding: 24px; }
+  .empty-art { width: 64px; height: 64px; border-radius: 18px; background: var(--panel); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; color: var(--text-dim); margin-bottom: 6px; }
+  .empty-title { font-family: var(--display); font-size: 17px; font-weight: 600; color: var(--text-hi); }
+  .empty-text { font-size: 13px; color: var(--text-dim); max-width: 340px; }
+  .empty-state .btn { margin-top: 8px; }
+  .shortcuts { margin-top: 18px; display: flex; gap: 16px; font-size: 11px; color: var(--text-dim); flex-wrap: wrap; justify-content: center; }
+
+  /* ── MODALS ── */
   .modal-overlay {
     position: fixed;
     inset: 0;
-    background: #0e0f11cc;
-    backdrop-filter: blur(4px);
+    background: #08090bcc;
+    backdrop-filter: blur(3px);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 100;
     opacity: 0;
     pointer-events: none;
-    transition: opacity 0.2s;
+    transition: opacity 0.15s;
   }
-
-  .modal-overlay.visible {
-    opacity: 1;
-    pointer-events: all;
-  }
+  .modal-overlay.visible { opacity: 1; pointer-events: all; }
 
   .modal {
     background: var(--panel);
     border: 1px solid var(--border-hi);
-    border-radius: 12px;
+    border-radius: var(--r-lg);
     width: min(480px, calc(100vw - 48px));
-    box-shadow: 0 32px 80px #00000080;
-    transform: translateY(8px);
-    transition: transform 0.2s;
-  }
-
-  .modal-overlay.visible .modal { transform: translateY(0); }
-
-  .modal-header {
-    padding: 24px 28px 16px;
-    border-bottom: 1px solid var(--border);
+    max-height: calc(100vh - 48px);
     display: flex;
-    align-items: center;
-    gap: 14px;
+    flex-direction: column;
+    box-shadow: var(--shadow);
+    transform: translateY(6px) scale(0.99);
+    transition: transform 0.15s;
   }
+  .modal.wide { width: min(640px, calc(100vw - 48px)); }
+  .modal-overlay.visible .modal { transform: none; }
 
-  .modal-danger-icon {
+  .modal-header { padding: 20px 24px 14px; display: flex; align-items: center; gap: 14px; }
+  .modal-danger-icon, .modal-add-icon, .modal-warn-icon {
     width: 36px;
     height: 36px;
-    background: var(--danger-dim);
-    border: 1px solid var(--danger);
-    border-radius: 8px;
+    border-radius: 10px;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    color: var(--danger);
-    font-size: 18px;
+    font-size: 17px;
   }
+  .modal-danger-icon { background: var(--danger-dim); color: var(--danger); }
+  .modal-add-icon { background: var(--accent-dim); color: var(--accent); }
+  .modal-warn-icon { background: var(--warn-dim); color: var(--warn); }
 
-  .modal-title {
-    font-family: var(--mono);
-    font-size: 14px;
-    font-weight: 700;
+  .modal-title { font-family: var(--display); font-size: 16px; font-weight: 600; color: var(--text-hi); }
+  .modal-subtitle { font-size: 12px; color: var(--text-dim); margin-top: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
+
+  .modal-body { padding: 4px 24px 18px; overflow-y: auto; }
+  .modal-footer { padding: 14px 24px 18px; display: flex; gap: 10px; justify-content: flex-end; border-top: 1px solid var(--border); }
+
+  .modal-warning { background: var(--danger-dim); border: 1px solid #ff5c6730; border-radius: var(--r); padding: 12px 14px; margin-bottom: 14px; }
+  .modal-warning p { font-size: 13px; color: var(--text); line-height: 1.55; }
+  .modal-warning strong { color: var(--text-hi); }
+
+  .modal-note { background: var(--accent-dim); border: 1px solid #00d4aa38; border-radius: var(--r); padding: 11px 14px; margin-top: 14px; font-size: 12px; color: var(--text); line-height: 1.55; }
+  .modal-note.error { background: var(--danger-dim); border-color: #ff5c6738; color: var(--danger); }
+  .modal-note.warn { background: var(--warn-dim); border-color: #ffb02040; color: var(--text); }
+
+  .field-label { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-dim); margin: 16px 0 6px; }
+  .text-input {
+    width: 100%;
+    font-family: var(--sans);
+    font-size: 13px;
     color: var(--text-hi);
-  }
-
-  .modal-subtitle {
-    font-size: 11px;
-    color: var(--text-dim);
-    margin-top: 2px;
-    font-family: var(--mono);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    max-width: 340px;
-  }
-
-  .modal-body { padding: 20px 28px; }
-
-  .modal-warning {
-    background: #ff475710;
-    border: 1px solid #ff475730;
-    border-radius: 6px;
-    padding: 14px 16px;
-    margin-bottom: 16px;
-  }
-
-  .modal-warning p {
-    font-size: 12px;
-    color: var(--text);
-    line-height: 1.6;
-  }
-
-  .modal-warning strong { color: var(--danger); }
-
-  .delete-scope {
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    margin-bottom: 20px;
-  }
-
-  .scope-item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 12px;
-    color: var(--text-dim);
-  }
-
-  .scope-check {
-    width: 16px;
-    height: 16px;
-    border-radius: 3px;
+    background: var(--bg);
     border: 1px solid var(--border-hi);
-    background: var(--surface);
+    border-radius: var(--r-sm);
+    padding: 8px 11px;
+    outline: none;
+  }
+  .text-input:focus { border-color: var(--accent); }
+
+  .name-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .name-chip { font-size: 12px; color: var(--text-hi); background: var(--raised); border: 1px solid var(--border-hi); border-radius: 20px; padding: 3px 10px; }
+  .name-chip.default { color: var(--warn); border-color: #ffb02060; background: var(--warn-dim); }
+
+  .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+  .info-cell { background: var(--panel); padding: 10px 14px; }
+  .info-cell.full { grid-column: 1 / -1; }
+  .info-cell-label { font-size: 11px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 3px; }
+  .info-cell-value { font-size: 13px; color: var(--text-hi); overflow-wrap: anywhere; }
+  .info-cell-value.accent { color: var(--accent); font-family: var(--mono); }
+  .info-cell-value.dim { color: var(--text-dim); }
+
+  /* delete scope */
+  .delete-scope { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
+  .scope-item { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--text); }
+  .scope-check {
+    width: 18px;
+    height: 18px;
+    border-radius: 5px;
+    border: 1px solid var(--border-hi);
+    background: var(--bg);
     cursor: pointer;
     display: flex;
     align-items: center;
@@ -644,419 +485,108 @@
     flex-shrink: 0;
     transition: all 0.1s;
   }
-
-  .scope-check.checked {
-    background: var(--danger-dim);
-    border-color: var(--danger);
-  }
-
-  .scope-check.checked::after {
-    content: '✓';
-    font-size: 10px;
-    color: var(--danger);
-  }
-
+  .scope-check.checked { background: var(--accent); border-color: var(--accent); }
+  .scope-check.checked::after { content: '✓'; font-size: 12px; font-weight: 700; color: #06231c; }
+  .scope-item.danger .scope-check.checked { background: var(--danger); border-color: var(--danger); }
+  .scope-item.danger .scope-check.checked::after { color: #fff; }
   .scope-label { cursor: pointer; }
-  .scope-label strong { color: var(--text); }
-  .scope-item.danger .scope-label,
-  .scope-item.danger .scope-label strong { color: var(--danger); }
+  .scope-label strong { color: var(--text-hi); font-weight: 600; }
+  .scope-item.danger .scope-label, .scope-item.danger .scope-label strong { color: var(--danger); }
 
-  .files-warning {
-    display: none;
-    background: #ff475718;
-    border: 1px solid var(--danger);
-    border-left-width: 4px;
-    border-radius: 6px;
-    padding: 14px 16px;
-    margin-bottom: 4px;
-  }
-
+  .files-warning { display: none; background: var(--danger-dim); border: 1px solid var(--danger); border-left-width: 4px; border-radius: var(--r); padding: 12px 14px; }
   .files-warning.visible { display: block; }
-
-  .files-warning-title {
-    font-family: var(--mono);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--danger);
-    margin-bottom: 8px;
-  }
-
-  .files-warning-path {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--text-hi);
-    word-break: break-all;
-    margin-bottom: 4px;
-  }
-
-  .files-warning-size {
-    font-family: var(--mono);
-    font-size: 13px;
-    font-weight: 700;
-    color: var(--danger);
-    margin-bottom: 8px;
-  }
-
-  .files-warning p { font-size: 11px; color: var(--text); line-height: 1.6; }
+  .files-warning-title { font-size: 12px; font-weight: 700; color: var(--danger); margin-bottom: 6px; }
+  .files-warning-path { font-family: var(--mono); font-size: 11px; color: var(--text-hi); word-break: break-all; margin-bottom: 4px; }
+  .files-warning-size { font-size: 14px; font-weight: 700; color: var(--danger); margin-bottom: 6px; }
+  .files-warning p { font-size: 12px; color: var(--text); line-height: 1.55; }
   .files-warning p strong { color: var(--danger); }
 
-  .modal-footer {
-    padding: 16px 28px 24px;
-    display: flex;
-    gap: 10px;
-    justify-content: flex-end;
-  }
+  /* kontakt open */
+  .kontakt-text { font-size: 13px; color: var(--text); line-height: 1.6; }
+  .kontakt-status { font-size: 12px; color: var(--warn); margin-top: 12px; min-height: 16px; }
 
-  .btn-cancel {
-    font-family: var(--mono);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    color: var(--text-dim);
-    background: transparent;
-    border: 1px solid var(--border-hi);
-    border-radius: 5px;
-    padding: 9px 20px;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-
-  .btn-cancel:hover { color: var(--text); border-color: var(--text-dim); }
-
-  .btn-confirm-delete {
-    font-family: var(--mono);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    color: #fff;
-    background: var(--danger);
-    border: 1px solid var(--danger);
-    border-radius: 5px;
-    padding: 9px 20px;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-
-  .btn-confirm-delete:hover { background: #ff2f41; }
-
-  /* ── ADD LIBRARY MODAL ── */
-  .modal-add-icon {
-    width: 36px;
-    height: 36px;
-    background: var(--accent-dim);
-    border: 1px solid var(--accent);
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    color: var(--accent);
-    font-size: 20px;
-  }
-
-  .modal-note {
-    background: var(--accent-dim);
-    border: 1px solid #00d4aa40;
-    border-radius: 6px;
-    padding: 12px 16px;
-    margin-top: 16px;
-    font-size: 12px;
-    color: var(--text);
-    line-height: 1.6;
-  }
-
-  .modal-note.error {
-    background: #ff475710;
-    border-color: #ff475730;
-    color: var(--danger);
-  }
-
-  .btn-confirm-add {
-    font-family: var(--mono);
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    color: #0e0f11;
-    background: var(--accent);
-    border: 1px solid var(--accent);
-    border-radius: 5px;
-    padding: 9px 20px;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-
-  .btn-confirm-add:hover { filter: brightness(1.1); }
-  .btn-confirm-add:disabled { opacity: 0.35; cursor: not-allowed; filter: none; }
-
-  /* ── LIBRARY NAME (patch bank) ── */
-  .field-label {
-    font-family: var(--mono);
-    font-size: 10px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: var(--text-dim);
-    margin: 16px 0 6px;
-  }
-
-  .text-input {
-    width: 100%;
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--text-hi);
-    background: var(--surface);
-    border: 1px solid var(--border-hi);
-    border-radius: 5px;
-    padding: 9px 12px;
-    outline: none;
-  }
-
-  .text-input:focus { border-color: var(--accent); }
-
-  .name-chips { display: flex; flex-wrap: wrap; gap: 6px; }
-
-  .name-chip {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--text);
-    background: var(--surface);
-    border: 1px solid var(--border-hi);
-    border-radius: 4px;
-    padding: 3px 8px;
-  }
-
-  .name-chip.default { color: var(--warn); border-color: #ffa50260; }
-
-  .detail-actions { display: flex; gap: 10px; flex-wrap: wrap; }
-
-  .btn-rename {
-    font-family: var(--mono);
-    font-size: 12px;
-    font-weight: 700;
-    letter-spacing: 0.08em;
-    color: var(--accent);
-    background: var(--accent-dim);
-    border: 1px solid var(--accent);
-    border-radius: 5px;
-    padding: 10px 20px;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-
-  .btn-rename:hover { filter: brightness(1.15); }
-  .btn-rename:disabled { opacity: 0.3; cursor: not-allowed; filter: none; }
-
-  /* ── KONTAKT OPEN ── */
-  .modal-warn-icon {
-    width: 36px;
-    height: 36px;
-    background: #ffa50215;
-    border: 1px solid var(--warn);
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    color: var(--warn);
-    font-size: 18px;
-  }
-
-  .kontakt-text { font-size: 12px; color: var(--text); line-height: 1.6; }
-  .kontakt-status { font-family: var(--mono); font-size: 11px; color: var(--warn); margin-top: 12px; min-height: 16px; }
-
-  /* ── ARTWORK ── */
-  .modal.wide {
-    width: min(640px, calc(100vw - 48px));
-    max-height: calc(100vh - 48px);
-    display: flex;
-    flex-direction: column;
-  }
-
-  .modal.wide .modal-body { overflow-y: auto; }
-
+  /* ── ARTWORK EDITOR ── */
   .art-section { padding: 14px 0; border-bottom: 1px solid var(--border); }
-  .art-section:first-child { padding-top: 0; }
+  .art-section:first-child { padding-top: 4px; }
   .art-section:last-child { border-bottom: none; padding-bottom: 0; }
-
-  .art-section-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 10px;
-    margin-bottom: 8px;
-  }
-
-  .art-title { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--text-hi); letter-spacing: 0.06em; }
-  .art-hint { font-size: 11px; color: var(--text-dim); line-height: 1.5; margin-top: 6px; }
-
+  .art-section-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .art-title { font-size: 13px; font-weight: 600; color: var(--text-hi); }
+  .art-hint { font-size: 12px; color: var(--text-dim); line-height: 1.5; margin-top: 8px; }
   .art-buttons { display: flex; gap: 6px; flex-shrink: 0; }
 
-  .btn-small {
-    font-family: var(--mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    color: var(--text);
-    background: transparent;
-    border: 1px solid var(--border-hi);
-    border-radius: 4px;
-    padding: 5px 10px;
-    cursor: pointer;
-  }
-
-  .btn-small:hover { color: var(--accent); border-color: var(--accent); }
-  .btn-small:disabled { opacity: 0.3; cursor: not-allowed; }
-
-  .art-tile, .art-banner, .art-header {
-    background: #2b2b2b;
-    border-radius: 6px;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--text-dim);
-    font-size: 12px;
-  }
-
+  .art-tile, .art-banner, .art-header { background: #2b2b2b; border-radius: var(--r-sm); overflow: hidden; display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: 12px; }
   .art-tile { width: 280px; aspect-ratio: 420 / 201; }
   .art-banner { width: 100%; aspect-ratio: 1280 / 212; font-size: 18px; color: var(--text-hi); }
   /* Kontakt's header bar at 1.5x: 52 logo-px tall, logo box 8 px from the left and 2 from the top */
-  .art-header { position: relative; width: 100%; height: 78px; justify-content: flex-start; align-items: flex-start;
-                padding: 3px 0 0 12px; color: var(--text-hi); font-size: 15px; }
+  .art-header { position: relative; width: 100%; height: 78px; justify-content: flex-start; align-items: flex-start; padding: 3px 0 0 12px; color: var(--text-hi); font-size: 15px; }
   .art-header.text-only { align-items: center; padding-top: 0; }
   .art-tile img, .art-banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
   .art-header img { width: 340.5px; height: 70.5px; display: block; }
-
   .art-staged { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-  .color-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-  .color-row input[type=color] { width: 36px; height: 30px; border: 1px solid var(--border-hi); border-radius: 4px; background: none; padding: 0; cursor: pointer; }
-  .color-row .text-input { width: 110px; }
+  .color-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+  .color-row input[type=color] { width: 34px; height: 32px; border: 1px solid var(--border-hi); border-radius: var(--r-sm); background: none; padding: 2px; cursor: pointer; }
+  .color-row .text-input { width: 110px; font-family: var(--mono); }
+
+  .art-thumbs { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .art-thumbs img { height: 34px; border-radius: 4px; display: block; }
+  .art-thumbs .art-swatch { width: 34px; height: 34px; border-radius: 4px; border: 1px solid var(--border-hi); }
 
   /* crop editor */
-  .crop-view {
-    position: relative;
-    overflow: hidden;
-    margin: 0 auto;
-    background: #111;
-    border-radius: 4px;
-    cursor: grab;
-    touch-action: none;
-    user-select: none;
-    box-shadow: 0 0 0 1px var(--border-hi);
-  }
-
+  .crop-view { position: relative; overflow: hidden; margin: 4px auto 0; background: #111; border-radius: var(--r-sm); cursor: grab; touch-action: none; user-select: none; box-shadow: 0 0 0 1px var(--border-hi); }
   .crop-view.dragging { cursor: grabbing; }
   .crop-frame { position: absolute; overflow: hidden; }
   .crop-frame.outlined { outline: 1px dashed var(--accent); outline-offset: 0; }
   .crop-view img { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; max-width: none; }
-
   .crop-controls { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
   .crop-controls input[type=range] { flex: 1; accent-color: var(--accent); }
-  .crop-info { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-top: 10px; line-height: 1.6; }
+  .crop-info { font-size: 12px; color: var(--text-dim); margin-top: 10px; line-height: 1.6; }
   .crop-info .warn { color: var(--warn); }
 
-  .art-thumbs { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
-  .art-thumbs img { height: 34px; border-radius: 3px; display: block; }
-  .art-thumbs .art-swatch { width: 34px; height: 34px; border-radius: 3px; border: 1px solid var(--border-hi); }
-
-  /* ── STATUS TOAST ── */
+  /* ── TOAST ── */
   .toast {
     position: fixed;
-    bottom: 24px;
+    bottom: 20px;
     left: 50%;
-    transform: translateX(-50%) translateY(16px);
-    background: var(--panel);
+    transform: translateX(-50%) translateY(12px);
+    max-width: min(560px, calc(100vw - 40px));
+    background: var(--raised);
     border: 1px solid var(--border-hi);
-    border-radius: 8px;
-    padding: 12px 20px;
-    font-family: var(--mono);
-    font-size: 12px;
+    border-radius: var(--r);
+    padding: 11px 16px;
+    font-size: 13px;
     color: var(--text-hi);
-    box-shadow: 0 8px 32px #00000060;
+    box-shadow: var(--shadow);
     z-index: 200;
     opacity: 0;
-    transition: all 0.25s;
+    transition: opacity 0.2s, transform 0.2s;
     pointer-events: none;
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     gap: 10px;
-    white-space: nowrap;
+    line-height: 1.45;
   }
-
-  .toast.visible {
-    opacity: 1;
-    transform: translateX(-50%) translateY(0);
-  }
-
-  .toast.success { border-color: var(--accent); }
-  .toast.error { border-color: var(--danger); }
-  .toast-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .toast.visible { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; margin-top: 5px; }
   .toast.success .toast-dot { background: var(--accent); }
   .toast.error .toast-dot { background: var(--danger); }
 
-  /* ── LOADING STATE ── */
-  .loading-overlay {
-    position: fixed;
-    inset: 0;
-    background: var(--bg);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 20px;
-    z-index: 50;
-    transition: opacity 0.3s;
-  }
-
-  .loading-overlay.hidden {
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .spinner {
-    width: 32px;
-    height: 32px;
-    border: 2px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-  }
-
+  /* ── LOADING ── */
+  .loading-overlay { position: fixed; inset: 0; background: #0f1013e6; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; z-index: 150; transition: opacity 0.2s; }
+  .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+  .spinner { width: 28px; height: 28px; border: 2px solid var(--border-hi); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
+  .loading-text { font-size: 13px; color: var(--text); }
 
-  .loading-text {
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--text-dim);
-    letter-spacing: 0.08em;
+  @media (max-width: 820px) {
+    .hero-inner { padding: 24px 20px 18px; gap: 14px; }
+    .hero-tile { width: 150px; font-size: 20px; }
+    .hero-name { font-size: 21px; }
+    .sections { padding: 16px 20px 0; }
+    .preview-grid { grid-template-columns: 1fr; }
+    .pv-tile { max-width: 280px; }
+    .danger-zone { flex-direction: column; align-items: flex-start; }
   }
-
-  /* ── PROTECTED NOTICE ── */
-  .protected-notice {
-    background: var(--border);
-    border-radius: 6px;
-    padding: 12px 16px;
-    font-size: 12px;
-    color: var(--text-dim);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  /* ── BANNER (persistent startup message) ── */
-  .banner {
-    padding: 10px 24px;
-    font-size: 12px;
-    font-family: var(--mono);
-    flex-shrink: 0;
-  }
-  .banner.error { background: var(--danger-dim); color: var(--danger); border-bottom: 1px solid #ff475730; }
-  .banner.warn  { background: #ffa50215; color: var(--warn); border-bottom: 1px solid #ffa50230; }
-
-  /* scrollbar for detail body */
-  .detail-body::-webkit-scrollbar { width: 4px; }
 </style>
 </head>
 <body>
@@ -1064,64 +594,65 @@
 <!-- Loading -->
 <div class="loading-overlay" id="loadingOverlay">
   <div class="spinner"></div>
-  <div class="loading-text">READING DATABASE...</div>
+  <div class="loading-text">Reading Kontakt's database…</div>
 </div>
 
-<!-- Titlebar -->
-<div class="titlebar">
-  <div class="titlebar-left">
-    <div class="logo-mark">
+<!-- Top bar -->
+<header class="topbar">
+  <div class="brand">
+    <div class="brand-mark">
       <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="2" y="2" width="5" height="12" rx="1.5" fill="#0e0f11"/>
-        <rect x="9" y="2" width="5" height="7" rx="1.5" fill="#0e0f11"/>
-        <rect x="9" y="11" width="5" height="3" rx="1.5" fill="#0e0f11"/>
+        <rect x="2" y="2" width="5" height="12" rx="1.5" fill="#06231c"/>
+        <rect x="9" y="2" width="5" height="7" rx="1.5" fill="#06231c"/>
+        <rect x="9" y="11" width="5" height="3" rx="1.5" fill="#06231c"/>
       </svg>
     </div>
-    <div>
-      <div class="app-name">KLIB</div>
-      <div class="app-sub">Kontakt Library Manager</div>
+    <span class="brand-name">KLib</span>
+    <span class="brand-sub">Kontakt Library Manager</span>
+  </div>
+  <button class="btn primary" onclick="openAddLibrary()" title="Add a library to Kontakt (Ctrl+N)">＋ Add library</button>
+  <div class="menu-wrap">
+    <button class="icon-btn" id="menuBtn" onclick="toggleMenu(event)" title="More">⋯</button>
+    <div class="menu" id="appMenu">
+      <button onclick="closeMenu(); refreshLibraries()">Refresh libraries <kbd>F5</kbd></button>
+      <button onclick="closeMenu(); loadDatabase()">Use a different database file…</button>
+      <div class="menu-sep"></div>
+      <div class="menu-info">Database<br><span class="mono" id="dbPathDisplay">No database loaded</span></div>
     </div>
   </div>
-  <div class="titlebar-right">
-    <div class="db-path" id="dbPathDisplay">No database loaded</div>
-    <button class="btn-load" onclick="openAddLibrary()">+ ADD LIBRARY</button>
-    <button class="btn-load" onclick="loadDatabase()">LOAD DB</button>
-  </div>
+</header>
+
+<!-- Banner (persistent, for startup messages) -->
+<div class="banner" id="banner" style="display:none">
+  <span id="bannerMsg"></span>
 </div>
 
 <!-- Main -->
 <div class="main">
 
   <!-- Sidebar -->
-  <div class="sidebar">
-    <div class="sidebar-header">
-      <div class="sidebar-title">Libraries</div>
-      <div style="display:flex;align-items:center;gap:8px">
-        <div class="lib-count" id="libCount">0</div>
-        <button class="btn-refresh" onclick="refreshLibraries()" title="Refresh">↻</button>
-      </div>
+  <aside class="sidebar">
+    <div class="search">
+      <span class="search-icon">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      </span>
+      <input id="searchInput" type="search" placeholder="Search libraries" autocomplete="off" spellcheck="false" oninput="renderList()">
+      <span class="lib-count" id="libCount"></span>
     </div>
     <div class="lib-list" id="libList">
       <!-- populated by JS -->
     </div>
-  </div>
+  </aside>
 
   <!-- Detail Panel -->
-  <div class="detail" id="detailPanel">
+  <section class="detail" id="detailPanel">
     <div class="empty-state" id="emptyState">
-      <div class="empty-icon">
-        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <rect x="3" y="3" width="7" height="18" rx="2"/>
-          <rect x="14" y="3" width="7" height="11" rx="2"/>
-          <rect x="14" y="17" width="7" height="4" rx="2"/>
-        </svg>
-      </div>
-      <p>SELECT A LIBRARY TO INSPECT</p>
+      <!-- populated by JS -->
     </div>
     <div class="detail-content" id="detailContent" style="display:none">
       <!-- populated by JS -->
     </div>
-  </div>
+  </section>
 
 </div>
 
@@ -1131,26 +662,20 @@
     <div class="modal-header">
       <div class="modal-danger-icon">⚠</div>
       <div>
-        <div class="modal-title">Confirm Deletion</div>
-        <div class="modal-subtitle" id="modalSubtitle">This action cannot be undone.</div>
+        <div class="modal-title">Remove library</div>
+        <div class="modal-subtitle" id="modalSubtitle">—</div>
       </div>
     </div>
     <div class="modal-body">
-      <div class="modal-warning">
-        <p>You are about to permanently remove <strong id="modalLibName">—</strong> from your system. Choose what to delete below.</p>
-      </div>
+      <p class="kontakt-text" style="margin-bottom:16px">
+        <strong id="modalLibName" style="color:var(--text-hi)">—</strong> will be removed from Kontakt, along with
+        everything it registered — registry entries, product files, caches, artwork and recent-file entries.
+        You can add it again later.
+      </p>
       <div class="delete-scope">
         <div class="scope-item">
-          <div class="scope-check checked" id="checkDb" onclick="toggleCheck('checkDb')"></div>
-          <div class="scope-label" onclick="toggleCheck('checkDb')"><strong>Database &amp; registration</strong> — removes from Kontakt browser, registry and Native Access</div>
-        </div>
-        <div class="scope-item">
           <div class="scope-check" id="checkFiles" onclick="toggleCheck('checkFiles')"></div>
-          <div class="scope-label" onclick="toggleCheck('checkFiles')"><strong>Sample files on disk</strong> — permanently deletes the library folder</div>
-        </div>
-        <div class="scope-item">
-          <div class="scope-check checked" id="checkCache" onclick="toggleCheck('checkCache')"></div>
-          <div class="scope-label" onclick="toggleCheck('checkCache')"><strong>Cache files</strong> — clears LibrariesCache entries</div>
+          <div class="scope-label" onclick="toggleCheck('checkFiles')"><strong>Also delete the sample files</strong> — the library's folder on disk</div>
         </div>
       </div>
       <div class="files-warning" id="filesWarning">
@@ -1161,8 +686,8 @@
       </div>
     </div>
     <div class="modal-footer">
-      <button class="btn-cancel" onclick="closeModal()">CANCEL</button>
-      <button class="btn-confirm-delete" id="btnConfirmDelete" onclick="confirmDelete()">REMOVE LIBRARY</button>
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-confirm-delete" id="btnConfirmDelete" onclick="confirmDelete()">Remove library</button>
     </div>
   </div>
 </div>
@@ -1173,7 +698,7 @@
     <div class="modal-header">
       <div class="modal-add-icon">+</div>
       <div>
-        <div class="modal-title">Add Library</div>
+        <div class="modal-title">Add library</div>
         <div class="modal-subtitle" id="addModalFolder">—</div>
       </div>
     </div>
@@ -1181,8 +706,8 @@
       <!-- populated by JS -->
     </div>
     <div class="modal-footer">
-      <button class="btn-cancel" onclick="closeAddModal()">CANCEL</button>
-      <button class="btn-confirm-add" id="btnConfirmAdd" onclick="confirmAdd()">ADD LIBRARY</button>
+      <button class="btn-cancel" onclick="closeAddModal()">Cancel</button>
+      <button class="btn-confirm-add" id="btnConfirmAdd" onclick="confirmAdd()">Add library</button>
     </div>
   </div>
 </div>
@@ -1193,7 +718,7 @@
     <div class="modal-header">
       <div class="modal-add-icon">✎</div>
       <div>
-        <div class="modal-title">Set Library Name</div>
+        <div class="modal-title">Browser folder name</div>
         <div class="modal-subtitle" id="nameModalLib">—</div>
       </div>
     </div>
@@ -1201,8 +726,8 @@
       <!-- populated by JS -->
     </div>
     <div class="modal-footer">
-      <button class="btn-cancel" onclick="closeNameModal()">CANCEL</button>
-      <button class="btn-confirm-add" id="btnConfirmName" onclick="confirmName()">RENAME PATCHES</button>
+      <button class="btn-cancel" onclick="closeNameModal()">Cancel</button>
+      <button class="btn-confirm-add" id="btnConfirmName" onclick="confirmName()">Rename patches</button>
     </div>
   </div>
 </div>
@@ -1213,7 +738,7 @@
     <div class="modal-header">
       <div class="modal-add-icon">▣</div>
       <div>
-        <div class="modal-title">Library Artwork</div>
+        <div class="modal-title">Library artwork</div>
         <div class="modal-subtitle" id="artModalName">—</div>
       </div>
     </div>
@@ -1221,8 +746,8 @@
       <!-- populated by JS -->
     </div>
     <div class="modal-footer">
-      <button class="btn-cancel" onclick="closeArtModal()">CANCEL</button>
-      <button class="btn-confirm-add" id="btnArtSave" onclick="saveArt()">SAVE ARTWORK</button>
+      <button class="btn-cancel" onclick="closeArtModal()">Cancel</button>
+      <button class="btn-confirm-add" id="btnArtSave" onclick="saveArt()">Save artwork</button>
     </div>
   </div>
 </div>
@@ -1233,7 +758,7 @@
     <div class="modal-header">
       <div class="modal-add-icon">⤧</div>
       <div>
-        <div class="modal-title" id="cropTitle">Position Image</div>
+        <div class="modal-title" id="cropTitle">Position image</div>
         <div class="modal-subtitle">Drag to move · scroll or use the slider to zoom</div>
       </div>
     </div>
@@ -1242,22 +767,22 @@
         <div class="crop-frame" id="cropFrame"><img id="cropImg" alt=""></div>
       </div>
       <div class="crop-controls">
-        <span class="field-label" style="margin:0">ZOOM</span>
+        <span class="field-label" style="margin:0">Zoom</span>
         <input type="range" id="cropZoom" min="0" max="1000" value="0" oninput="cropSlider(this.value)">
-        <button class="btn-small" onclick="cropPreset('fit')">FIT</button>
-        <button class="btn-small" onclick="cropPreset('fill')">FILL</button>
+        <button class="btn-small" onclick="cropPreset('fit')">Fit</button>
+        <button class="btn-small" onclick="cropPreset('fill')">Fill</button>
       </div>
       <div class="color-row" id="cropBgRow">
-        <span class="field-label" style="margin:0">BACKGROUND</span>
+        <span class="field-label" style="margin:0">Background</span>
         <input type="color" id="cropBgPick" oninput="setCropBg(this.value)">
         <input class="text-input" id="cropBgHex" oninput="setCropBg(this.value, true)">
-        <button class="btn-small" onclick="setCropBg(crop.info.edge_color)">FROM IMAGE</button>
+        <button class="btn-small" onclick="setCropBg(crop.info.edge_color)">From image</button>
       </div>
       <div class="crop-info" id="cropInfo"></div>
     </div>
     <div class="modal-footer">
-      <button class="btn-cancel" onclick="closeCropper()">CANCEL</button>
-      <button class="btn-confirm-add" id="btnCropApply" onclick="applyCrop()">APPLY</button>
+      <button class="btn-cancel" onclick="closeCropper()">Cancel</button>
+      <button class="btn-confirm-add" id="btnCropApply" onclick="applyCrop()">Apply</button>
     </div>
   </div>
 </div>
@@ -1278,8 +803,8 @@
       <div class="kontakt-status" id="kontaktStatus"></div>
     </div>
     <div class="modal-footer">
-      <button class="btn-cancel" onclick="closeKontaktModal()">CANCEL</button>
-      <button class="btn-confirm-add" id="btnKontaktRetry" onclick="tryKontaktAgain()">TRY AGAIN</button>
+      <button class="btn-cancel" onclick="closeKontaktModal()">Cancel</button>
+      <button class="btn-confirm-add" id="btnKontaktRetry" onclick="tryKontaktAgain()">Try again</button>
     </div>
   </div>
 </div>
@@ -1290,33 +815,32 @@
   <span id="toastMsg"></span>
 </div>
 
-<!-- Banner (persistent, for startup errors) -->
-<div class="banner" id="banner" style="display:none">
-  <span id="bannerMsg"></span>
-</div>
 
 <script>
   // ── STATE ──
   let libraries = [];
   let selectedId = null;
   let pendingDeleteId = null;
+  let niGroupOpen = false;
+  let listOrder = [];  // ids in on-screen order, for ↑/↓
 
-  function refreshLibraries() {
-    const btn = document.querySelector('.btn-refresh');
-    btn.classList.add('spinning');
-    window.pywebview.api.init().then(result => {
-      btn.classList.remove('spinning');
+  const KONTAKT_DEFAULT_FOLDER = 'Kontakt';
+
+  // ── LOADING ──
+  function refreshLibraries() { reloadLibraries(true); }
+
+  // Re-read the libraries, keeping the current selection when it still exists
+  function reloadLibraries(showSpinner) {
+    if (showSpinner) showLoading('Reading Kontakt\'s database…');
+    return window.pywebview.api.init().then(result => {
+      const keep = selectedId;
       handleLoadResult(result);
-      // Clear selection since list is refreshed
-      selectedId = null;
-      document.getElementById('emptyState').style.display = 'flex';
-      document.getElementById('detailContent').style.display = 'none';
+      if (keep !== null && libraries.some(l => l.id === keep)) selectLibrary(keep);
     });
   }
 
-  // ── INIT ──
   window.addEventListener('DOMContentLoaded', () => {
-    // Wait for pywebview to be ready, then auto-detect db
+    // Wait for pywebview to be ready, then auto-detect the db
     const tryInit = () => {
       if (window.pywebview && window.pywebview.api) {
         window.pywebview.api.init().then(handleLoadResult);
@@ -1328,16 +852,16 @@
   });
 
   function loadDatabase() {
-    document.getElementById('loadingOverlay').classList.remove('hidden');
+    showLoading('Opening database…');
     window.pywebview.api.pick_database().then(handleLoadResult);
   }
 
   function handleLoadResult(result) {
-    document.getElementById('loadingOverlay').classList.add('hidden');
+    hideLoading();
     document.getElementById('banner').style.display = 'none';  // a fresh load replaces any earlier message
 
     if (result.locked) {
-      showBanner('Kontakt is currently open. Close it before using KLib.', 'error');
+      showBanner('Kontakt is open. Close it to manage your libraries.', 'error');
       // TRY AGAIN re-reads the database once Kontakt is closed
       openKontaktModal(() => guarded(
         () => window.pywebview.api.init().then(r => Object.assign(r, {kontakt_open: r.locked})),
@@ -1345,152 +869,353 @@
       return;
     }
     if (!result.found) {
-      showBanner('Kontakt 8 database not found. Use LOAD DB to locate it manually.', 'warn');
+      showBanner('Kontakt 8\'s database wasn\'t found. Choose it with “Use a different database file…” in the ⋯ menu.', 'warn');
+      loadLibraries([]);
       return;
     }
     if (result.error) {
-      showBanner(`Error reading database: ${result.error}`, 'error');
+      showBanner(`Couldn't read Kontakt's database: ${result.error}`, 'error');
       return;
     }
 
-    const shortPath = result.db_path.split('\\').slice(-3).join('\\');
-    document.getElementById('dbPathDisplay').textContent = shortPath;
+    document.getElementById('dbPathDisplay').textContent = result.db_path;
     loadLibraries(result.libraries);
   }
 
   function loadLibraries(libs) {
     libraries = libs;
-    document.getElementById('libCount').textContent = libs.length;
     renderList();
+    if (selectedId === null || !libraries.some(l => l.id === selectedId)) showEmpty();
+  }
+
+  // ── LIBRARY HELPERS ──
+  function libIssues(lib) {
+    const issues = [];
+    if (!lib.is_native && (lib.folder_exists === false || lib.state === 4)) {
+      issues.push({kind: 'danger', text: 'Library folder is missing'});
+    }
+    const inDefault = (lib.banks || {})[KONTAKT_DEFAULT_FOLDER] || 0;
+    if (!lib.is_native && inDefault) {
+      issues.push({kind: 'warn', count: inDefault,
+                   text: `${inDefault} patch${inDefault === 1 ? '' : 'es'} in Kontakt's shared “Kontakt” folder`});
+    }
+    if (!lib.is_native && lib.stray_artwork) {
+      issues.push({kind: 'info', from: lib.stray_artwork, text: 'Artwork is filed under another name'});
+    }
+    return issues;
+  }
+
+  function monogram(name) {
+    const words = (name || '?').replace(/[^\p{L}\p{N} ]/gu, ' ').split(/\s+/).filter(Boolean);
+    return ((words[0] || '?')[0] + (words[1] ? words[1][0] : '')).toUpperCase();
+  }
+
+  function hueFor(name) {
+    let h = 0;
+    for (const ch of name || '') h = (h * 31 + ch.charCodeAt(0)) % 360;
+    return h;
+  }
+
+  function thumbHtml(lib, cls, src) {
+    if (src || lib.thumb) return `<img class="${cls}" src="${src || lib.thumb}" alt="">`;
+    const bg = lib.header_color || `hsl(${hueFor(lib.alias)} 32% 30%)`;
+    return `<div class="${cls}" style="background:${bg}">${esc(monogram(lib.alias))}</div>`;
+  }
+
+  function plural(n, word) { return `${n} ${word}${n === 1 ? '' : /(ch|sh|s|x)$/.test(word) ? 'es' : 's'}`; }
+
+  function patchSummary(lib) {
+    const parts = [];
+    if (lib.instruments) parts.push(plural(lib.instruments, 'instrument'));
+    if (lib.multis) parts.push(plural(lib.multis, 'multi'));
+    if (lib.snapshots) parts.push(plural(lib.snapshots, 'snapshot'));
+    return parts.join(' · ');
+  }
+
+  function libSubtitle(lib) {
+    const parts = [];
+    if (lib.company) parts.push(lib.company);
+    if (lib.instruments) parts.push(plural(lib.instruments, 'instrument'));
+    return parts.join(' · ') || (lib.is_native ? 'Native Instruments' : 'No instruments indexed');
+  }
+
+  function niceVersion(v) {
+    const trimmed = (v || '').replace(/(\.0)+$/, '');
+    return trimmed && !trimmed.includes('.') ? trimmed + '.0' : trimmed;
+  }
+
+  // ── SIDEBAR ──
+  function libRow(lib) {
+    const issue = libIssues(lib).find(i => i.kind !== 'info');  // dots are for problems only
+    return `
+      <div class="lib-item ${lib.id === selectedId ? 'active' : ''}" data-id="${lib.id}"
+           onclick="selectLibrary(${lib.id})" title="${esc(lib.alias)}">
+        ${thumbHtml(lib, 'lib-thumb')}
+        <div class="lib-info">
+          <div class="lib-name">${esc(lib.alias)}</div>
+          <div class="lib-sub">${esc(libSubtitle(lib))}</div>
+        </div>
+        ${issue ? `<span class="status-dot ${issue.kind}" title="${esc(issue.text)}"></span>` : ''}
+      </div>`;
   }
 
   function renderList() {
     const container = document.getElementById('libList');
-    container.innerHTML = '';
-    let userIdx = 1;
-    libraries.forEach(lib => {
-      const item = document.createElement('div');
-      item.className = 'lib-item' + (lib.is_native ? ' protected' : '') + (lib.id === selectedId ? ' active' : '');
-      item.onclick = () => selectLibrary(lib.id);
+    const query = (document.getElementById('searchInput').value || '').trim().toLowerCase();
+    const matches = libraries.filter(l => !query ||
+      [l.alias, l.company, l.browser_name].some(s => (s || '').toLowerCase().includes(query)));
+    const byName = (a, b) => a.alias.localeCompare(b.alias, undefined, {sensitivity: 'base'});
+    const users = matches.filter(l => !l.is_native).sort(byName);
+    const natives = matches.filter(l => l.is_native).sort(byName);
+    const showNatives = niGroupOpen || !!query;
 
-      const badge = lib.is_native
-        ? `<div class="lib-badge badge-native">NI</div>`
-        : `<div class="lib-badge badge-user">USER</div>`;
+    const total = libraries.filter(l => !l.is_native).length;
+    document.getElementById('libCount').textContent = query ? `${users.length + natives.length}` : (total || '');
 
-      const vendor = lib.vendor || inferVendor(lib.path);
-
-      item.innerHTML = `
-        <div class="lib-index">${lib.is_native ? '—' : String(userIdx++).padStart(2,'0')}</div>
-        <div class="lib-info">
-          <div class="lib-name">${lib.alias}</div>
-          <div class="lib-vendor">${vendor || 'Unknown vendor'}</div>
-        </div>
-        ${badge}
-      `;
-      container.appendChild(item);
-    });
+    let html = users.map(libRow).join('');
+    if (natives.length) {
+      html += `<button class="group-toggle ${showNatives ? 'open' : ''}" onclick="toggleNiGroup()">
+                 <span class="chev">›</span> Native Instruments · ${natives.length}</button>`;
+      if (showNatives) html += natives.map(libRow).join('');
+    }
+    if (!matches.length) {
+      html = query
+        ? `<div class="list-empty">No libraries match “${esc(query)}”.</div>`
+        : `<div class="list-empty">No libraries yet.<br>Use <strong>Add library</strong> to add one.</div>`;
+    }
+    container.innerHTML = html;
+    listOrder = users.map(l => l.id).concat(showNatives ? natives.map(l => l.id) : []);
   }
 
-  function selectLibrary(id) {
-    selectedId = id;
+  function toggleNiGroup() {
+    niGroupOpen = !niGroupOpen;
     renderList();
+  }
+
+  // ── EMPTY STATE ──
+  function showEmpty() {
+    selectedId = null;
+    renderList();
+    document.getElementById('detailContent').style.display = 'none';
+    const empty = document.getElementById('emptyState');
+    empty.style.display = 'flex';
+    const hasLibraries = libraries.some(l => !l.is_native);
+    empty.innerHTML = `
+      <div class="empty-art">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6">
+          <rect x="3" y="3" width="7" height="18" rx="2"/><rect x="14" y="3" width="7" height="11" rx="2"/><rect x="14" y="17" width="7" height="4" rx="2"/>
+        </svg>
+      </div>
+      <div class="empty-title">${hasLibraries ? 'Select a library' : 'No libraries yet'}</div>
+      <div class="empty-text">${hasLibraries
+        ? 'Pick a library on the left to see how it looks in Kontakt, fix its name or artwork, or remove it.'
+        : 'Add a sample library folder and KLib will register it with Kontakt — it can even create the .nicnt file for you.'}</div>
+      ${hasLibraries ? '' : '<button class="btn primary" onclick="openAddLibrary()">＋ Add library</button>'}
+      <div class="shortcuts"><span><kbd>↑</kbd> <kbd>↓</kbd> browse</span><span><kbd>Ctrl</kbd> <kbd>F</kbd> search</span><span><kbd>Ctrl</kbd> <kbd>N</kbd> add library</span></div>`;
+  }
+
+  // ── LIBRARY PAGE ──
+  function selectLibrary(id) {
     const lib = libraries.find(l => l.id === id);
     if (!lib) return;
+    selectedId = id;
+    renderList();
+    const row = document.querySelector(`.lib-item[data-id="${id}"]`);
+    if (row) row.scrollIntoView({block: 'nearest'});
 
     document.getElementById('emptyState').style.display = 'none';
     const content = document.getElementById('detailContent');
-    content.style.display = 'flex';
-    content.style.flexDirection = 'column';
+    content.style.display = 'block';
 
-    const vendor = lib.vendor || inferVendor(lib.path);
-    const canDelete = !lib.is_native;
-    const driveLabel = lib.path.startsWith('D:') ? 'D:' : lib.path.startsWith('C:') ? 'C:' : lib.path.substring(0,2);
+    const native = lib.is_native;
+    const meta = [lib.company && esc(lib.company), niceVersion(lib.product_version) && 'v' + esc(niceVersion(lib.product_version)),
+                  esc(patchSummary(lib))].filter(Boolean).join('<span class="sep">·</span>');
+    const heroBg = lib.thumb
+      ? `<div class="hero-bg" style="background-image:url('${lib.thumb}')"></div>`
+      : `<div class="hero-bg plain" style="background:linear-gradient(135deg, ${lib.header_color || `hsl(${hueFor(lib.alias)} 32% 22%)`} 0%, var(--bg) 70%)"></div>`;
+
+    const alerts = libIssues(lib).map(issue => issue.kind === 'info' ? `
+      <div class="alert info">
+        <span class="alert-icon">✦</span>
+        <div class="alert-text">This library has artwork Kontakt isn't showing
+          <span class="dim">It's filed under “${esc(issue.from)}”, but Kontakt looks for “${esc(lib.browser_name)}”.</span></div>
+        <button class="btn primary sm" onclick="adoptArtwork(${lib.id})">Show it in Kontakt</button>
+      </div>` : issue.kind === 'danger' ? `
+      <div class="alert danger">
+        <span class="alert-icon">⚠</span>
+        <div class="alert-text">The library folder is missing
+          <span class="dim">${esc(lib.path)} no longer exists. Remove the library to clean it out of Kontakt.</span></div>
+        <button class="btn danger sm" onclick="openModal(${lib.id})">Remove…</button>
+      </div>` : `
+      <div class="alert warn">
+        <span class="alert-icon">⚠</span>
+        <div class="alert-text">${plural(issue.count, 'patch')} ${issue.count === 1 ? 'is' : 'are'} in Kontakt's shared “Kontakt” folder
+          <span class="dim">Give them this library's name so it gets its own folder in Kontakt's browser.</span></div>
+        <button class="btn warn sm" onclick="openNameModal(${lib.id})">Fix…</button>
+      </div>`).join('');
+
+    const folders = Object.keys(lib.banks || {});
+    const folderNames = folders.length
+      ? folders.map(f => `<span class="${f === KONTAKT_DEFAULT_FOLDER ? 'name-chip default' : 'folder-name'}">${esc(f)}</span>`).join(' ')
+      : '<span class="dim">Not indexed yet — open Kontakt once</span>';
 
     content.innerHTML = `
-      <div class="detail-hero" data-product-id="${lib.product_id || ''}">
-        <div class="detail-label">REGISTERED LIBRARY</div>
-        <div class="detail-name">${lib.alias}</div>
-        <div class="detail-alias">${vendor ? vendor + ' · ' : ''}v${lib.product_version}</div>
-      </div>
-      <div class="detail-body">
-        <div class="info-grid">
-          <div class="info-cell full">
-            <div class="info-cell-label">Library Path</div>
-            <div class="info-cell-value">${lib.path}</div>
-          </div>
-          <div class="info-cell">
-            <div class="info-cell-label">Database ID</div>
-            <div class="info-cell-value accent">${lib.id}</div>
-          </div>
-          <div class="info-cell">
-            <div class="info-cell-label">Product ID</div>
-            <div class="info-cell-value accent">${lib.product_id || '—'}</div>
-          </div>
-          <div class="info-cell">
-            <div class="info-cell-label">Presets Indexed</div>
-            <div class="info-cell-value">${lib.preset_count}</div>
-          </div>
-          <div class="info-cell">
-            <div class="info-cell-label">Drive</div>
-            <div class="info-cell-value">${driveLabel}</div>
-          </div>
-          <div class="info-cell full">
-            <div class="info-cell-label">UUID</div>
-            <div class="info-cell-value dim">${lib.upid || '—'}</div>
-          </div>
-          <div class="info-cell full">
-            <div class="info-cell-label">Library Name In Patches</div>
-            <div class="info-cell-value" id="patchNames">reading patches…</div>
-          </div>
-          <div class="info-cell full">
-            <div class="info-cell-label">Library Artwork</div>
-            <div class="info-cell-value" id="artSummary">reading artwork…</div>
+      <div class="hero">
+        ${heroBg}
+        <div class="hero-inner">
+          <span id="heroTile">${thumbHtml(lib, 'hero-tile')}</span>
+          <div class="hero-text">
+            <div class="hero-name">${esc(lib.alias)}</div>
+            <div class="hero-meta">${meta || '&nbsp;'}</div>
           </div>
         </div>
-
-        ${canDelete ? '' : `
-          <div class="protected-notice">
-            🔒 &nbsp; This is a protected Native Instruments library and cannot be removed through this tool.
+      </div>
+      <div class="sections">
+        ${native ? '<div class="notice">Native Instruments content is managed by Native Access and can\'t be changed here.</div>' : ''}
+        ${alerts}
+        ${native ? '' : `
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <div class="card-title">In Kontakt's browser</div>
+              <div class="card-sub">How this library looks in Kontakt</div>
+            </div>
+            <button class="btn secondary sm" onclick="openArtModal({mode: 'edit', libId: ${lib.id}})">Edit artwork</button>
           </div>
-        `}
-      </div>
-      <div class="detail-footer">
-        <div class="footer-info">
-          <span>${lib.preset_count}</span> presets · <span>${lib.product_id || 'no product id'}</span>
-        </div>
-        <div class="detail-actions">
-          <button class="btn-rename" onclick="openNameModal(${lib.id})" ${canDelete ? '' : 'disabled'}>
-            SET LIBRARY NAME
-          </button>
-          <button class="btn-rename" onclick="openArtModal({mode: 'edit', libId: ${lib.id}})" ${canDelete ? '' : 'disabled'}>
-            ARTWORK
-          </button>
-          <button class="btn-delete" onclick="openModal(${lib.id})" ${canDelete ? '' : 'disabled'}>
-            <span>⚠</span> REMOVE LIBRARY
-          </button>
-        </div>
-      </div>
-    `;
-    loadPatchNames(lib.id);
-    loadArtSummary(lib.id);
+          <div class="preview-grid" id="artPreview"><div class="dim">Loading…</div></div>
+          <div class="folder-row" style="margin-top:16px">
+            <span class="dim">Browser folder</span> ${folderNames}
+            <button class="btn ghost sm" onclick="openNameModal(${lib.id})">Rename…</button>
+          </div>
+        </div>`}
+        <details class="card">
+          <summary><span class="card-title">Details</span><span class="chev">›</span></summary>
+          <dl class="kv">
+            <dt>Location</dt><dd class="mono">${esc(lib.path)}</dd>
+            <dt>Patches</dt><dd>${esc(patchSummary(lib)) || '<span class="dim">None indexed</span>'}</dd>
+            <dt>Product ID</dt><dd class="mono">${esc(lib.product_id) || '—'}</dd>
+            <dt>Version</dt><dd>${esc(lib.product_version) || '—'}</dd>
+            <dt>Product UUID</dt><dd class="mono">${esc(lib.upid) || '—'}</dd>
+          </dl>
+          <div style="margin-top:14px">
+            <button class="btn secondary sm" onclick="openFolder(${lib.id})" ${lib.folder_exists ? '' : 'disabled'}>Open folder</button>
+          </div>
+        </details>
+        ${native ? '' : `
+        <div class="card danger-zone">
+          <div>
+            <div class="card-title">Remove library</div>
+            <div class="card-sub">Removes it from Kontakt and cleans up everything it registered. Sample files stay unless you choose to delete them.</div>
+          </div>
+          <button class="btn danger-outline" onclick="openModal(${lib.id})">Remove…</button>
+        </div>`}
+      </div>`;
+    if (!native) loadArtPreview(lib.id);
   }
 
-  function loadPatchNames(id) {
-    window.pywebview.api.library_patches(id).then(r => {
-      const el = document.getElementById('patchNames');
-      if (!el || selectedId !== id) return;
-      if (!r.found || !r.folder_exists) { el.textContent = 'Library folder not found'; return; }
-      el.innerHTML = r.patches.total ? nameChips(r.patches) : '<span class="dim">No patches found</span>';
+  // The library's artwork as Kontakt shows it: tile, banner (or its text), header (logo on its colour)
+  function loadArtPreview(id) {
+    window.pywebview.api.artwork_info(id, null).then(info => {
+      const el = document.getElementById('artPreview');
+      if (!el || selectedId !== id || !info.found) return;
+      const lib = libraries.find(l => l.id === id);
+      if (info.tile && info.tile.preview) {
+        document.getElementById('heroTile').innerHTML = thumbHtml(lib, 'hero-tile', info.tile.preview);
+      }
+      const tile = info.tile && info.tile.preview ? `<img src="${info.tile.preview}" alt="">` : 'No picture';
+      const banner = info.banner && info.banner.preview
+        ? `<img src="${info.banner.preview}" alt="">` : esc(info.shortname || info.name);
+      const logo = info.logo && info.logo.preview;
+      el.innerHTML = `
+        <div>
+          <div class="preview-label">Tile</div>
+          <div class="pv-tile">${tile}</div>
+        </div>
+        <div class="preview-right">
+          <div>
+            <div class="preview-label">Banner</div>
+            <div class="pv-banner">${banner}</div>
+          </div>
+          <div>
+            <div class="preview-label">Header</div>
+            <div class="pv-header ${logo ? '' : 'text-only'}" style="background:${logo ? (info.color || DEFAULT_HEADER) : DEFAULT_HEADER}">
+              ${logo ? `<img src="${logo}" alt="">` : esc(info.name)}</div>
+          </div>
+        </div>`;
     });
   }
 
-  function inferVendor(path) {
-    const knownVendors = ['Audio Imperia','Heavyocity','Keepforest','Soundiron','ProjectSAM','Embertone','Spitfire','Output','Zero-G','Musical Sampling'];
-    for (const v of knownVendors) {
-      if (path.toLowerCase().includes(v.toLowerCase())) return v;
-    }
-    return null;
+  function adoptArtwork(id) {
+    guarded(() => window.pywebview.api.adopt_artwork(id), result => {
+      showToast(result.message, result.success ? 'success' : 'error');
+      if (result.success) reloadLibraries();
+    });
   }
+
+  function openFolder(id) {
+    window.pywebview.api.open_folder(id).then(r => { if (!r.success) showToast(r.message, 'error'); });
+  }
+
+  // ── MENU ──
+  function toggleMenu(e) {
+    e.stopPropagation();
+    const open = document.getElementById('appMenu').classList.toggle('open');
+    document.getElementById('menuBtn').classList.toggle('open', open);
+  }
+
+  function closeMenu() {
+    document.getElementById('appMenu').classList.remove('open');
+    document.getElementById('menuBtn').classList.remove('open');
+  }
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('.menu-wrap')) closeMenu();
+  });
+
+  // ── KEYBOARD ──
+  // Topmost first: the Kontakt dialog and the cropper sit above the others
+  const OVERLAYS = [
+    ['kontaktModalOverlay', () => closeKontaktModal()],
+    ['cropModalOverlay', () => closeCropper()],
+    ['artModalOverlay', () => closeArtModal()],
+    ['nameModalOverlay', () => closeNameModal()],
+    ['addModalOverlay', () => closeAddModal()],
+    ['modalOverlay', () => closeModal()],
+  ];
+
+  function topOverlay() {
+    return OVERLAYS.find(([id]) => document.getElementById(id).classList.contains('visible'));
+  }
+
+  document.addEventListener('keydown', e => {
+    const overlay = topOverlay();
+    const typing = ['INPUT', 'TEXTAREA'].includes(e.target.tagName);
+    if (e.key === 'Escape') {
+      if (overlay) { overlay[1](); e.preventDefault(); return; }
+      if (document.getElementById('appMenu').classList.contains('open')) { closeMenu(); return; }
+      const search = document.getElementById('searchInput');
+      if (e.target === search && search.value) { search.value = ''; renderList(); }
+      return;
+    }
+    if (overlay) {
+      // Enter in a dialog's text field confirms it
+      if (e.key === 'Enter' && typing) {
+        if (overlay[0] === 'nameModalOverlay') { e.preventDefault(); confirmName(); }
+        if (overlay[0] === 'addModalOverlay' && !document.getElementById('btnConfirmAdd').disabled) { e.preventDefault(); confirmAdd(); }
+      }
+      return;
+    }
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (ctrl && e.key.toLowerCase() === 'f') { e.preventDefault(); document.getElementById('searchInput').focus(); return; }
+    if (ctrl && e.key.toLowerCase() === 'n') { e.preventDefault(); openAddLibrary(); return; }
+    if (e.key === 'F5') { e.preventDefault(); refreshLibraries(); return; }
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && (!typing || e.target.id === 'searchInput') && listOrder.length) {
+      e.preventDefault();
+      const i = listOrder.indexOf(selectedId);
+      const next = e.key === 'ArrowDown' ? Math.min(listOrder.length - 1, i + 1) : Math.max(0, i < 0 ? 0 : i - 1);
+      selectLibrary(listOrder[next]);
+    }
+  });
 
   // ── MODAL ──
   function openModal(id) {
@@ -1499,8 +1224,6 @@
     document.getElementById('modalLibName').textContent = lib.alias;
     document.getElementById('modalSubtitle').textContent = lib.path;
     // Reset checkboxes — deleting sample files is always opt-in
-    document.getElementById('checkDb').classList.add('checked');
-    document.getElementById('checkCache').classList.add('checked');
     document.getElementById('checkFiles').classList.remove('checked');
     folderSizeFor = null;
     updateFilesWarning();
@@ -1531,7 +1254,7 @@
     const lib = libraries.find(l => l.id === pendingDeleteId);
     document.getElementById('filesWarning').classList.toggle('visible', on);
     document.getElementById('checkFiles').closest('.scope-item').classList.toggle('danger', on);
-    document.getElementById('btnConfirmDelete').textContent = on ? 'DELETE LIBRARY + FILES' : 'REMOVE LIBRARY';
+    document.getElementById('btnConfirmDelete').textContent = on ? 'Delete library + files' : 'Remove library';
     if (!on || !lib || folderSizeFor === lib.id) return;
 
     folderSizeFor = lib.id;
@@ -1547,24 +1270,20 @@
   function confirmDelete() {
     const lib = libraries.find(l => l.id === pendingDeleteId);
     const libId = pendingDeleteId;
-    const deleteDb    = document.getElementById('checkDb').classList.contains('checked');
+    const deleteDb    = true;   // registration, database rows and caches always go together
     const deleteFiles = document.getElementById('checkFiles').classList.contains('checked');
-    const deleteCache = document.getElementById('checkCache').classList.contains('checked');
+    const deleteCache = true;
 
     closeModal();
     guarded(() => {
-      showLoading('REMOVING LIBRARY...');
+      showLoading('Removing library…');
       return window.pywebview.api.delete_library(lib.id, deleteDb, deleteFiles, deleteCache)
         .then(result => { hideLoading(); return result; });
     }, result => {
         if (result.success) {
           libraries = libraries.filter(l => l.id !== libId);
-          selectedId = null;
-          document.getElementById('emptyState').style.display = 'flex';
-          document.getElementById('detailContent').style.display = 'none';
-          document.getElementById('libCount').textContent = libraries.length;
-          renderList();
-          showToast(`${lib.alias} removed successfully`, 'success');
+          showEmpty();
+          showToast(`${lib.alias} was removed.`, 'success');
         } else {
           showToast(result.message, 'error');
         }
@@ -1617,7 +1336,7 @@
 
   function hideLoading() {
     document.getElementById('loadingOverlay').classList.add('hidden');
-    document.getElementById('loadingOverlay').querySelector('.loading-text').textContent = 'READING DATABASE...';
+    document.getElementById('loadingOverlay').querySelector('.loading-text').textContent = 'Reading Kontakt\'s database…';
   }
 
   // ── ADD LIBRARY ──
@@ -1767,7 +1486,7 @@
 
   function defaultNameWarning(patches) {
     const n = patches.names[DEFAULT_BANK];
-    return n ? `<div class="modal-note error">${n} patch${n === 1 ? ' is' : 'es are'} labelled "Kontakt" — Kontakt would file ${n === 1 ? 'it' : 'them'} in its shared Kontakt folder. Set the library name below.</div>` : '';
+    return n ? `<div class="modal-note warn">${n} patch${n === 1 ? ' is' : 'es are'} labelled “Kontakt”, so Kontakt would file ${n === 1 ? 'it' : 'them'} in its shared “Kontakt” folder. KLib will rename ${n === 1 ? 'it' : 'them'} to the name below.</div>` : '';
   }
 
   function suggestedName(patches, fallback) {
@@ -1787,10 +1506,10 @@
         document.getElementById('btnConfirmName').disabled = true;
       } else {
         body.innerHTML = `
-          <div class="field-label" style="margin-top:0">Current library name in patches</div>
+          <div class="field-label" style="margin-top:0">Patches are currently filed under</div>
           ${nameChips(r.patches)}
           ${defaultNameWarning(r.patches)}
-          <div class="field-label">New library name</div>
+          <div class="field-label">New browser folder name</div>
           <input class="text-input" id="newLibName" value="${esc(suggestedName(r.patches, lib.alias))}">
           <div class="modal-note">KLib backs up each patch, renames it, and updates Kontakt's database. Close Kontakt first.</div>`;
         document.getElementById('btnConfirmName').disabled = false;
@@ -1810,11 +1529,11 @@
     if (!id || !name || !name.trim()) return;
     closeNameModal();
     guarded(() => {
-      showLoading('RENAMING PATCHES...');
+      showLoading('Renaming patches…');
       return window.pywebview.api.set_library_name(id, name.trim()).then(result => { hideLoading(); return result; });
     }, result => {
       showToast(result.message, result.success ? 'success' : 'error');
-      if (selectedId === id) loadPatchNames(id);
+      if (result.success) reloadLibraries();
     });
   }
 
@@ -1844,22 +1563,22 @@
     const staged = slot => slot in art.staged ? 'art-staged' : '';
     const buttons = (slot, has) => `
       <div class="art-buttons">
-        ${art.staged[slot] && art.staged[slot].source ? `<button class="btn-small" onclick="adjustArt('${slot}')">ADJUST</button>` : ''}
-        <button class="btn-small" onclick="pickArt('${slot}')">CHOOSE IMAGE…</button>
-        <button class="btn-small" onclick="removeArt('${slot}')" ${has ? '' : 'disabled'}>REMOVE</button>
+        ${art.staged[slot] && art.staged[slot].source ? `<button class="btn-small" onclick="adjustArt('${slot}')">Adjust</button>` : ''}
+        <button class="btn-small" onclick="pickArt('${slot}')">Choose image…</button>
+        <button class="btn-small" onclick="removeArt('${slot}')" ${has ? '' : 'disabled'}>Remove</button>
       </div>`;
     const note = slot => art.notes[slot] ? ` <span style="color:var(--warn)">${esc(art.notes[slot])}</span>` : '';
     const tileFile = art.staged.tile ? 'new image' : (art.current.tile.file || '');
 
     document.getElementById('artModalBody').innerHTML = `
       <div class="art-section">
-        <div class="art-section-head"><span class="art-title">ENLARGED VIEW TILE</span>${buttons('tile', tile)}</div>
+        <div class="art-section-head"><span class="art-title">Enlarged view tile</span>${buttons('tile', tile)}</div>
         <div class="art-tile ${staged('tile')}">${tile ? `<img src="${tile}">` : 'No picture — Kontakt shows a folder icon'}</div>
         <div class="art-hint">Saved as a 420×316 image; Kontakt shows the middle 420×200 band (previewed here).
           ${tileFile === 'MST_artwork.png' ? 'Currently coming from MST_artwork.png.' : ''}${note('tile')}</div>
       </div>
       <div class="art-section">
-        <div class="art-section-head"><span class="art-title">CONDENSED VIEW BANNER</span>${buttons('banner', banner)}</div>
+        <div class="art-section-head"><span class="art-title">Condensed view banner</span>${buttons('banner', banner)}</div>
         <div class="art-banner ${staged('banner')}">${banner ? `<img src="${banner}">` : esc(shortname || art.name)}</div>
         <div class="field-label">Banner text (shown when there's no banner image)</div>
         <input class="text-input" id="artShortname" placeholder="${esc(art.name)}" value="${esc(shortname)}"
@@ -1867,7 +1586,7 @@
         <div class="art-hint">Banner image: 1280×212.${note('banner')}</div>
       </div>
       <div class="art-section">
-        <div class="art-section-head"><span class="art-title">LIBRARY HEADER</span>${buttons('logo', logo)}</div>
+        <div class="art-section-head"><span class="art-title">Library header</span>${buttons('logo', logo)}</div>
         <div class="art-header ${staged('logo')} ${logo ? '' : 'text-only'}" id="artHeaderPreview"
              style="background:${logo ? (color || DEFAULT_HEADER) : DEFAULT_HEADER}">
           ${logo ? `<img src="${logo}">` : esc(art.name)}</div>
@@ -1876,7 +1595,7 @@
                  oninput="setArtColor(this.value)">
           <input class="text-input" id="artColorHex" value="${esc(color)}" placeholder="default"
                  oninput="setArtColor(this.value, true)">
-          <button class="btn-small" onclick="setArtColor('')" ${color ? '' : 'disabled'}>DEFAULT</button>
+          <button class="btn-small" onclick="setArtColor('')" ${color ? '' : 'disabled'}>Default</button>
         </div>
         <div class="art-hint">Logo: transparent PNG, fitted to 227×47. The header colour only shows behind a logo.</div>
       </div>`;
@@ -1922,9 +1641,9 @@
   // top-left at (ox, oy) in frame px. Crop sent to Python = the frame's area in source pixels.
   // view: the part of the output Kontakt shows (the tile's middle 420×201); the crop editor frames just that
   const CROP_SLOTS = {
-    tile:   {label: 'Enlarged View Tile', out: [420, 316], view: [420, 201], cover: true},
-    banner: {label: 'Condensed View Banner', out: [1280, 212], cover: true},
-    logo:   {label: 'Library Header Logo', out: [227, 47], cover: false},
+    tile:   {label: 'enlarged view tile', out: [420, 316], view: [420, 201], cover: true},
+    banner: {label: 'condensed view banner', out: [1280, 212], cover: true},
+    logo:   {label: 'library header logo', out: [227, 47], cover: false},
   };
   const CROP_MAX_WIDTH = 570;
   const CROP_CHROME = 410;  // overlay margin + dialog header, controls, background row, info lines and footer, in px
@@ -1973,7 +1692,7 @@
     img.src = info.preview;
     img.style.width = W + 'px';
     img.style.height = H + 'px';
-    document.getElementById('cropTitle').textContent = 'Position Image — ' + spec.label;
+    document.getElementById('cropTitle').textContent = 'Position image — ' + spec.label;
 
     if (prevCrop) {
       const shown = toShownRect(spec, prevCrop);
@@ -2115,7 +1834,7 @@
       art.current = info;
       art.name = info.name;
       document.getElementById('artModalName').textContent = info.name;
-      document.getElementById('btnArtSave').textContent = context.mode === 'edit' ? 'SAVE ARTWORK' : 'DONE';
+      document.getElementById('btnArtSave').textContent = context.mode === 'edit' ? 'Save artwork' : 'Done';
       renderArt();
       document.getElementById('artModalOverlay').classList.add('visible');
     });
@@ -2151,25 +1870,7 @@
     closeArtModal();
     guarded(() => window.pywebview.api.artwork_save(libId, changes), result => {
       showToast(result.message, result.success ? 'success' : 'error');
-      if (selectedId === libId) loadArtSummary(libId);
-    });
-  }
-
-  function artSummaryHtml(info) {
-    const parts = [];
-    if (info.tile.preview) parts.push(`<img src="${info.tile.preview}" title="Enlarged view tile">`);
-    if (info.banner.preview) parts.push(`<img src="${info.banner.preview}" title="Condensed view banner">`);
-    if (info.logo.preview) parts.push(`<span style="background:${info.color || DEFAULT_HEADER};border-radius:3px;padding:2px 4px"><img src="${info.logo.preview}" style="height:30px" title="Header logo"></span>`);
-    else if (info.color) parts.push(`<span class="art-swatch" style="background:${info.color}" title="Header colour"></span>`);
-    if (info.shortname && !info.banner.preview) parts.push(`<span class="name-chip">${esc(info.shortname)}</span>`);
-    return parts.length ? `<div class="art-thumbs">${parts.join('')}</div>` : '<span class="dim">None — Kontakt shows a folder icon and the library name</span>';
-  }
-
-  function loadArtSummary(id) {
-    window.pywebview.api.artwork_info(id, null).then(info => {
-      const el = document.getElementById('artSummary');
-      if (!el || selectedId !== id) return;
-      el.innerHTML = info.found ? artSummaryHtml(info) : '—';
+      if (result.success) reloadLibraries();
     });
   }
 
@@ -2199,7 +1900,7 @@
       <div class="field-label">Artwork (optional)</div>
       <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
         <span class="info-cell-value dim" id="addArtSummary">Keep existing / none</span>
-        <button class="btn-small" onclick="openArtForAdd()">SET ARTWORK…</button>
+        <button class="btn-small" onclick="openArtForAdd()">Set artwork…</button>
       </div>`;
   }
 
@@ -2223,17 +1924,19 @@
     document.getElementById('bannerMsg').textContent = msg;
     banner.className = `banner ${type}`;
     banner.style.display = 'block';
-    // Insert banner after titlebar
-    document.querySelector('.titlebar').after(banner);
     document.getElementById('loadingOverlay').classList.add('hidden');
   }
 
   // ── TOAST ──
+  let toastTimer = null;
+
   function showToast(msg, type = 'success') {
     const toast = document.getElementById('toast');
     document.getElementById('toastMsg').textContent = msg;
     toast.className = `toast ${type} visible`;
-    setTimeout(() => toast.classList.remove('visible'), 3000);
+    clearTimeout(toastTimer);
+    // long messages stay up long enough to read
+    toastTimer = setTimeout(() => toast.classList.remove('visible'), Math.min(9000, 2500 + (msg || '').length * 45));
   }
 
   // Close modal on overlay click

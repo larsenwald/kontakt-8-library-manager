@@ -80,6 +80,53 @@ def suggest_snpid(db_product_ids=()):
             return candidate
 
 
+PLACEHOLDER_COMPANY = "custom ["  # what third-party .nicnt generators put in <Company>
+
+
+def _product_entry(product):
+    text = lambda tag: (product.findtext(tag) or "").strip()
+    company = text("Company")
+    return {"upid": text("UPID").lower(), "snpid": text("SNPID").upper(),
+            "company": "" if company.lower().startswith(PLACEHOLDER_COMPANY) else company,
+            "name": text("Name"), "reg_key": text("RegKey") or text("Name")}
+
+
+_catalog_cache = {"mtime": None, "products": []}
+
+
+def _catalog_products():
+    """Native Access's catalogue (~3 MB), parsed once and reused until the file changes."""
+    try:
+        mtime = os.path.getmtime(NATIVE_ACCESS_CATALOG)
+    except OSError:
+        return []
+    if _catalog_cache["mtime"] != mtime:
+        try:
+            root = ET.parse(NATIVE_ACCESS_CATALOG).getroot()
+        except (ET.ParseError, OSError):
+            return []
+        _catalog_cache.update(mtime=mtime, products=[_product_entry(p) for p in root.iter("Product")])
+    return _catalog_cache["products"]
+
+
+def installed_products():
+    """
+    [{upid, snpid, company, name, reg_key}]: installed products' Service Center files first, then NI's
+    catalogue (NI products like The Grandeur have no Service Center file of their own).
+    """
+    products = []
+    for path in glob.glob(os.path.join(SERVICE_CENTER_DIR, "*.xml")):
+        if os.path.normcase(path) == os.path.normcase(NATIVE_ACCESS_CATALOG):
+            continue
+        try:
+            product = ET.parse(path).getroot().find("Product")
+        except (ET.ParseError, OSError):
+            continue
+        if product is not None:
+            products.append(_product_entry(product))
+    return products + _catalog_products()
+
+
 def _registered_dir(reg_key):
     """ContentDir of an existing HKLM registration, or None."""
     try:
