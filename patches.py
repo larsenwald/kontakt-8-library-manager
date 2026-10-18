@@ -19,7 +19,7 @@ import time
 
 SOUNDINFO_ID = 108
 PATCH_EXTS = (".nki", ".nkm", ".nksn")
-EDITABLE_EXTS = (".nki",)  # verified in Kontakt; .nkm/.nksn are scanned but not edited yet
+EDITABLE_EXTS = (".nki",)  # multis/snapshots don't decide the library's folder, so they're left alone
 DEFAULT_BANK = "Kontakt"
 MAX_BANK_LEVELS = 3
 BACKUP_ROOT = os.path.join(os.environ.get("LOCALAPPDATA", ""), "KLib", "patch-backups")
@@ -162,17 +162,17 @@ def scan_library(folder):
 
 
 def summarize(scan):
-    """{ top-level bank name: count } over readable patches, plus counts of skipped files."""
+    """{ top-level bank name: count } over instrument patches (multis/snapshots don't set the folder)."""
+    instruments = [e for e in scan if e["ext"] in EDITABLE_EXTS]
     names = {}
-    for e in scan:
+    for e in instruments:
         if e["banks"] is not None:
             top = e["banks"][0] if e["banks"] else ""
             names[top] = names.get(top, 0) + 1
     return {
         "names": names,
-        "total": len(scan),
-        "unreadable": sum(1 for e in scan if e["error"]),
-        "not_editable": sum(1 for e in scan if not e["error"] and not e["editable"]),
+        "total": len(instruments),
+        "unreadable": sum(1 for e in instruments if e["error"]),
     }
 
 

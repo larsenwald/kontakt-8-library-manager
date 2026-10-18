@@ -5,13 +5,23 @@ Launches a pywebview window and exposes the Python API to the HTML frontend.
 
 import ctypes
 import os
+import re
 import subprocess
 import sys
 import webview
 from db import get_libraries, delete_library, default_db_path, is_kontakt_running, set_bank_name
 from patches import scan_library, set_library_name, summarize
 from cleanup import is_admin
-from register import inspect_folder, register_library
+from register import check_new_library, inspect_folder, register_library, suggest_snpid
+from nicnt import NicntError, generate_nicnt
+
+
+def _name_from_folder(folder):
+    """A starting library name from a download folder: drop [tags], 'rutracker.org' and version numbers."""
+    name = os.path.basename(os.path.normpath(folder))
+    name = re.sub(r"\[[^\]]*\]|\([^)]*\)|rutracker\.org", " ", name, flags=re.I)
+    name = re.sub(r"\bv?\d+(\.\d+)+\b", " ", name, flags=re.I)
+    return re.sub(r"\s+", " ", name).strip(" -_.")
 
 
 def resource_path(relative):
@@ -78,9 +88,25 @@ class KLibAPI:
         info = inspect_folder(folder)
         info["folder"] = os.path.normpath(folder)
         info["patches"] = summarize(scan_library(folder))
+        if info.get("needs_nicnt"):
+            own = [n for n in info["patches"]["names"] if n and n != "Kontakt"]
+            info["suggested"] = {
+                "name": own[0] if len(own) == 1 else _name_from_folder(folder),
+                "snpid": suggest_snpid(self._db_product_ids()),
+            }
         return info
 
-    def add_library(self, folder, library_name=None):
+    def check_new_nicnt(self, name, snpid):
+        return check_new_library(name, snpid, self._db_product_ids())
+
+    def _db_product_ids(self):
+        db_path = self._db_path or default_db_path()
+        try:
+            return [l["product_id"] for l in get_libraries(db_path)] if db_path else []
+        except Exception:
+            return []
+
+    def add_library(self, folder, library_name=None, new_nicnt=None):
         db_path = self._db_path or default_db_path()
         if db_path and is_kontakt_running(db_path):
             return {
@@ -89,6 +115,18 @@ class KLibAPI:
                 "details": []
             }
         details = []
+        # No .nicnt: generate one first (name / company / SNPID from the add dialog)
+        if new_nicnt:
+            name, snpid = new_nicnt.get("name", "").strip(), new_nicnt.get("snpid", "").strip().upper()
+            problems = check_new_library(name, snpid, self._db_product_ids())
+            if problems:
+                return {"success": False, "message": problems[0], "details": problems}
+            try:
+                path = generate_nicnt(folder, name, new_nicnt.get("company", "").strip(), snpid)
+            except (NicntError, OSError) as e:
+                return {"success": False, "message": f"Could not create the .nicnt: {e}", "details": []}
+            details.append(f"✓ Created {path}")
+            library_name = library_name or name
         # Name the patches before Kontakt's first scan, so it files them correctly from the start
         if library_name:
             renamed = set_library_name(folder, library_name)
@@ -130,8 +168,6 @@ class KLibAPI:
             return {"success": False,
                     "message": f"Patches were renamed but the database update failed: {e}",
                     "details": details + [f"Originals: {renamed['backup_dir']}"]}
-        if renamed["skipped"]:
-            details.append(f"⚠ {len(renamed['skipped'])} multi/snapshot or unreadable file(s) left unchanged")
         if not renamed["changed"]:
             return {"success": True, "message": f"All patches already say '{new_name}'.", "details": details}
         return {"success": not renamed["failed"],

@@ -1428,11 +1428,19 @@
     return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   }
 
+  let generatingNicnt = false;
+
   function openAddLibrary() {
     window.pywebview.api.pick_library_folder().then(info => {
       if (info.cancelled) return;
-      pendingAddFolder = info.ok ? info.folder : null;
       document.getElementById('addModalFolder').textContent = info.folder;
+
+      if (info.needs_nicnt) {
+        showNicntForm(info);
+        return;
+      }
+      generatingNicnt = false;
+      pendingAddFolder = info.ok ? info.folder : null;
 
       const p = info.product;
       const grid = p ? `
@@ -1479,13 +1487,63 @@
     pendingAddFolder = null;
   }
 
+  // No .nicnt: collect name / company / SNPID and let KLib generate one
+  function showNicntForm(info) {
+    generatingNicnt = true;
+    pendingAddFolder = info.folder;
+    const s = info.suggested || {};
+    const patches = info.patches && info.patches.total ? `
+        <div class="field-label">Library name in patches</div>
+        ${nameChips(info.patches)}
+        ${defaultNameWarning(info.patches)}` : '';
+    document.getElementById('addModalBody').innerHTML = `
+      <div class="modal-note" style="margin-top:0">This library has no .nicnt. KLib will create one, set the patches' library name to match, and register it.</div>
+      ${patches}
+      <div class="field-label">Library name (Kontakt browser folder)</div>
+      <input class="text-input" id="newNicntName" value="${esc(s.name)}" oninput="checkNicntForm()">
+      <div class="field-label">Company (optional)</div>
+      <input class="text-input" id="newNicntCompany" value="" oninput="checkNicntForm()">
+      <div class="field-label">SNPID (3 letters/digits)</div>
+      <input class="text-input" id="newNicntSnpid" value="${esc(s.snpid)}" maxlength="3"
+             style="text-transform:uppercase; width:90px" oninput="checkNicntForm()">
+      <div id="nicntProblems"></div>`;
+    document.getElementById('addModalOverlay').classList.add('visible');
+    checkNicntForm();
+  }
+
+  let nicntCheckSeq = 0;
+  function checkNicntForm() {
+    const seq = ++nicntCheckSeq;
+    const name = document.getElementById('newNicntName').value;
+    const snpid = document.getElementById('newNicntSnpid').value;
+    const btn = document.getElementById('btnConfirmAdd');
+    btn.disabled = true;
+    window.pywebview.api.check_new_nicnt(name, snpid).then(problems => {
+      if (seq !== nicntCheckSeq) return;  // a newer keystroke is being checked
+      document.getElementById('nicntProblems').innerHTML = problems.length
+        ? `<div class="modal-note error">${problems.map(esc).join('<br>')}</div>`
+        : `<div class="modal-note">✓ Name and SNPID are free.</div>`;
+      btn.disabled = problems.length > 0;
+    });
+  }
+
   function confirmAdd() {
     const folder = pendingAddFolder;
     if (!folder) return;
-    const nameInput = document.getElementById('addLibName');
-    const libraryName = nameInput ? nameInput.value.trim() : null;
+    let libraryName = null, newNicnt = null;
+    if (generatingNicnt) {
+      newNicnt = {
+        name: document.getElementById('newNicntName').value.trim(),
+        company: document.getElementById('newNicntCompany').value.trim(),
+        snpid: document.getElementById('newNicntSnpid').value.trim().toUpperCase(),
+      };
+      libraryName = newNicnt.name;
+    } else {
+      const nameInput = document.getElementById('addLibName');
+      libraryName = nameInput ? nameInput.value.trim() : null;
+    }
     closeAddModal();
-    window.pywebview.api.add_library(folder, libraryName || null).then(result => {
+    window.pywebview.api.add_library(folder, libraryName || null, newNicnt).then(result => {
       showToast(result.message, result.success ? 'success' : 'error');
     });
   }
@@ -1499,11 +1557,8 @@
       .sort((a, b) => b[1] - a[1])
       .map(([name, n]) => `<span class="name-chip ${name === DEFAULT_BANK ? 'default' : ''}">${esc(name || '(empty)')} · ${n}</span>`)
       .join('');
-    const extra = [];
-    if (patches.not_editable) extra.push(`${patches.not_editable} multi/snapshot not editable yet`);
-    if (patches.unreadable) extra.push(`${patches.unreadable} unreadable`);
     return `<div class="name-chips">${chips}</div>` +
-      (extra.length ? `<div class="info-cell-value dim" style="margin-top:6px">${extra.join(' · ')}</div>` : '');
+      (patches.unreadable ? `<div class="info-cell-value dim" style="margin-top:6px">${patches.unreadable} unreadable</div>` : '');
   }
 
   function defaultNameWarning(patches) {

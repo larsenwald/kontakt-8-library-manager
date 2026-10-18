@@ -5,15 +5,79 @@ Writes the library's system registration; Kontakt picks the library up and index
 time it starts (it re-registers anything with an HKLM\\SOFTWARE\\Native Instruments\\<RegKey> key).
 """
 
+import glob
 import json
 import os
+import random
+import string
 import winreg
+import xml.etree.ElementTree as ET
 
 from cleanup import (NI_KEY, SERVICE_CENTER_DIR, INSTALLED_PRODUCTS_DIR, NI_RESOURCES_IMAGE_DIR,
                      _WOW64, _norm, is_admin)
 from nicnt import NicntError, extract, find_nicnt, read_nicnt
 
 CONTENT_VERSION = "1.0.0"
+
+
+# ── New .nicnt: SNPID + name checks ──
+
+NATIVE_ACCESS_CATALOG = os.path.join(SERVICE_CENTER_DIR, "NativeAccess.xml")
+SNPID_CHARS = string.digits + string.ascii_uppercase
+INVALID_NAME_CHARS = set('\\/:*?"<>|')
+
+
+def _known_products():
+    """(snpids, names) — upper-cased SNPIDs and lower-cased RegKeys/Names of NI's catalog and installed products."""
+    snpids, names = set(), set()
+    files = glob.glob(os.path.join(SERVICE_CENTER_DIR, "*.xml"))
+    for path in files:
+        try:
+            root = ET.parse(path).getroot()
+        except (ET.ParseError, OSError):
+            continue
+        for product in root.iter("Product"):
+            for el in product.findall("SNPID"):
+                if el.text and el.text.strip():
+                    snpids.add(el.text.strip().upper())
+            for tag in ("RegKey", "Name"):
+                text = (product.findtext(tag) or "").strip()
+                if text:
+                    names.add(text.lower())
+    return snpids, names
+
+
+def check_new_library(name, snpid, db_product_ids=()):
+    """Problems with generating a .nicnt for (name, snpid); [] if it's good to go."""
+    problems = []
+    name, snpid = (name or "").strip(), (snpid or "").strip().upper()
+    snpids, names = _known_products()
+    snpids |= {p.upper() for p in db_product_ids if p}
+
+    if not name:
+        problems.append("Library name is required.")
+    elif INVALID_NAME_CHARS & set(name) or name.endswith((".", " ")):
+        problems.append('Library name can\'t contain \\ / : * ? " < > | or end with a dot or space.')
+    elif len(name) > 100:
+        problems.append("Library name is too long.")
+    elif name.lower() in names:
+        problems.append(f"'{name}' is already the name of a Native Instruments product or installed library.")
+
+    if len(snpid) != 3 or any(c not in SNPID_CHARS for c in snpid):
+        problems.append("SNPID must be exactly 3 letters or digits.")
+    elif snpid in snpids:
+        problems.append(f"SNPID {snpid} is already used by another product.")
+    return problems
+
+
+def suggest_snpid(db_product_ids=()):
+    """A random SNPID no known product uses (always contains a letter, like most custom ones)."""
+    used = _known_products()[0] | {p.upper() for p in db_product_ids if p}
+    rng = random.SystemRandom()
+    while True:
+        candidate = "".join(rng.choice(SNPID_CHARS) for _ in range(3))
+        if candidate not in used and not candidate.isdigit():
+            return candidate
 
 
 def _registered_dir(reg_key):
@@ -35,8 +99,8 @@ def inspect_folder(folder):
     try:
         nicnt_path = find_nicnt(folder)
         if not nicnt_path:
-            return {"ok": False, "message": "This folder has no .nicnt file.", "nicnt": None,
-                    "product": None, "already_registered": False}
+            return {"ok": False, "needs_nicnt": True, "message": "This folder has no .nicnt file.",
+                    "nicnt": None, "product": None, "already_registered": False}
         product = read_nicnt(nicnt_path)["product"]
     except (NicntError, OSError) as e:
         return {"ok": False, "message": f"Could not read the .nicnt: {e}", "nicnt": None,
