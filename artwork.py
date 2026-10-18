@@ -99,17 +99,94 @@ def _preview(slot, img):
     return _data_url(img.convert("RGBA"), 454)
 
 
-def prepare_image(slot, source_path):
-    """Resize / crop a picked image for a slot into a staging file. Returns {path, preview, size}."""
-    spec = SLOTS[slot]
+SOURCE_PREVIEW_MAX = 1600  # longest side of the picture the crop editor works on
+
+
+def _open_source(source_path):
     try:
-        with Image.open(source_path) as src:
-            src.load()
-            if src.mode in ("P", "LA", "L"):
-                src = src.convert("RGBA")
-            fitted = _fit(src if spec["fit"] == "contain" else src.convert("RGBA"), spec["size"], spec["fit"])
+        src = Image.open(source_path)
+        src.load()
     except (OSError, ValueError) as e:
         raise ArtworkError(f"could not read the image: {e}")
+    return src.convert("RGBA")
+
+
+def source_info(source_path):
+    """A picked image's size plus a lightweight preview for the crop editor."""
+    src = _open_source(source_path)
+    preview = src
+    if max(src.size) > SOURCE_PREVIEW_MAX:
+        scale = SOURCE_PREVIEW_MAX / max(src.size)
+        preview = src.resize((round(src.width * scale), round(src.height * scale)), Image.LANCZOS)
+    buf = io.BytesIO()
+    preview.save(buf, "WEBP", quality=85)
+    return {"width": src.width, "height": src.height, "edge_color": _edge_color(src),
+            "preview": "data:image/webp;base64," + base64.b64encode(buf.getvalue()).decode()}
+
+
+def _crop_to(src, crop, size):
+    """
+    Render crop = {x, y, w, h} (source pixels, may extend past the image) onto a canvas of `size`.
+    Only the part that overlaps the image is resampled, from full resolution; the rest is transparent.
+    """
+    w, h = size
+    cx, cy, cw, ch = (float(crop[k]) for k in ("x", "y", "w", "h"))
+    if cw <= 0 or ch <= 0:
+        raise ArtworkError("crop area is empty")
+    sx, sy = w / cw, h / ch
+    canvas = Image.new("RGBA", size, (0, 0, 0, 0))
+    left, top = max(0.0, cx), max(0.0, cy)
+    right, bottom = min(float(src.width), cx + cw), min(float(src.height), cy + ch)
+    if right <= left or bottom <= top:
+        return canvas
+    dest = (round((left - cx) * sx), round((top - cy) * sy), round((right - cx) * sx), round((bottom - cy) * sy))
+    if dest[2] <= dest[0] or dest[3] <= dest[1]:
+        return canvas
+    part = src.resize((dest[2] - dest[0], dest[3] - dest[1]), Image.LANCZOS, box=(left, top, right, bottom))
+    canvas.alpha_composite(part, (dest[0], dest[1]))
+    return canvas
+
+
+def _edge_color(img):
+    """Average colour of the image's outer border — a background that usually blends in."""
+    rgb = img.convert("RGB")
+    small = rgb.resize((max(1, min(64, rgb.width)), max(1, min(64, rgb.height))), Image.BILINEAR)
+    w, h = small.size
+    border = [small.getpixel((x, y)) for x in range(w) for y in (0, h - 1)] + \
+             [small.getpixel((x, y)) for y in range(h) for x in (0, w - 1)]
+    return "#" + "".join(f"{round(sum(p[i] for p in border) / len(border)):02x}" for i in range(3))
+
+
+def _parse_color(value):
+    value = (value or "").strip().lstrip("#").lower()
+    if len(value) != 6 or any(ch not in "0123456789abcdef" for ch in value):
+        raise ArtworkError("background must be a hex colour like #1a1a1a")
+    return tuple(int(value[i:i + 2], 16) for i in (0, 2, 4))
+
+
+def prepare_image(slot, source_path, crop=None, background=None):
+    """
+    Resize / crop a picked image for a slot into a staging file. crop = {x, y, w, h} in source pixels,
+    and may reach past the image. Tile and banner are solid images: anything the image doesn't cover
+    (including the tile's unseen top/bottom strips) is filled with `background` (default: the image's
+    edge colour). The logo keeps those areas transparent so the header colour shows through.
+    Without a crop, tile/banner are centre-cropped to fill and the logo is fitted whole.
+    Returns {path, preview, note}.
+    """
+    spec = SLOTS[slot]
+    size = spec["size"]
+    src = _open_source(source_path)
+    if crop:
+        fitted = _crop_to(src, crop, size)
+        source_pixels = float(crop["w"])
+    else:
+        fitted = _fit(src, size, spec["fit"])
+        source_pixels = min(src.width, src.height * size[0] / size[1]) if spec["fit"] == "cover" else size[0]
+    if spec["fit"] == "cover":
+        fill = _parse_color(background or _edge_color(src))
+        solid = Image.new("RGBA", size, fill + (255,))
+        solid.alpha_composite(fitted.convert("RGBA"))
+        fitted = solid.convert("RGB")
     os.makedirs(STAGING_DIR, exist_ok=True)
     out = os.path.join(STAGING_DIR, f"{slot}-{time.time_ns()}{os.path.splitext(spec['file'])[1]}")
     if out.endswith(".webp"):
@@ -117,10 +194,8 @@ def prepare_image(slot, source_path):
     else:
         fitted.save(out, "PNG")
     note = ""
-    if spec["fit"] == "cover":
-        with Image.open(source_path) as src:
-            if src.width < spec["size"][0] or src.height < spec["size"][1]:
-                note = f"Image is smaller than {spec['size'][0]}x{spec['size'][1]} and was scaled up."
+    if spec["fit"] == "cover" and source_pixels < size[0]:
+        note = f"This crop is enlarged {size[0] / source_pixels:.1f}x, so it may look soft in Kontakt."
     return {"path": out, "preview": _preview(slot, fitted), "note": note}
 
 

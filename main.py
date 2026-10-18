@@ -10,7 +10,8 @@ import sqlite3
 import subprocess
 import sys
 import webview
-from artwork import ArtworkError, apply_artwork, prepare_image, read_artwork, reapply_overrides, rename_artwork
+from artwork import (ArtworkError, apply_artwork, prepare_image, read_artwork, reapply_overrides,
+                     rename_artwork, source_info)
 from db import browser_name, get_libraries, delete_library, default_db_path, is_kontakt_running, set_bank_name
 from patches import scan_library, set_library_name, summarize
 from cleanup import is_admin
@@ -38,6 +39,7 @@ class KLibAPI:
 
     def __init__(self):
         self._db_path = None
+        self._art_sources = set()  # images picked through the dialog; the only ones artwork_crop reads
 
     # ── Called on startup ──
     def init(self):
@@ -118,7 +120,8 @@ class KLibAPI:
             return {
                 "success": False,
                 "message": "Kontakt is open. Close it before adding libraries.",
-                "details": []
+                "details": [],
+                "kontakt_open": True
             }
         details = []
         # No .nicnt: generate one first (name / company / SNPID from the add dialog)
@@ -174,16 +177,30 @@ class KLibAPI:
             file_types=("Images (*.png;*.jpg;*.jpeg;*.webp;*.bmp)", "All files (*.*)"))
         if not result:
             return {"cancelled": True}
+        source = os.path.normpath(result[0])
         try:
-            return prepare_image(slot, result[0])
+            info = source_info(source)
         except ArtworkError as e:
+            return {"error": str(e)}
+        self._art_sources.add(source)
+        info["source"] = source
+        return info
+
+    def artwork_crop(self, slot, source, crop, background=None):
+        """Render the crop chosen in the editor (source pixels) into a staged image for the slot."""
+        source = os.path.normpath(source or "")
+        if source not in self._art_sources:
+            return {"error": "Pick the image again."}
+        try:
+            return prepare_image(slot, source, crop, background)
+        except (ArtworkError, KeyError, TypeError, ValueError) as e:
             return {"error": str(e)}
 
     def artwork_save(self, lib_id, changes):
         if not self._db_path:
             return {"success": False, "message": "No database loaded.", "details": []}
         if is_kontakt_running(self._db_path):
-            return {"success": False, "message": "Kontakt is open. Close it before changing artwork.", "details": []}
+            return {"success": False, "message": "Kontakt is open. Close it before changing artwork.", "details": [], "kontakt_open": True}
         info = self.artwork_info(lib_id=lib_id)
         if not info.get("found"):
             return {"success": False, "message": "Library not found.", "details": []}
@@ -206,7 +223,7 @@ class KLibAPI:
         if not self._db_path:
             return {"success": False, "message": "No database loaded.", "details": []}
         if is_kontakt_running(self._db_path):
-            return {"success": False, "message": "Kontakt is open. Close it before renaming.", "details": []}
+            return {"success": False, "message": "Kontakt is open. Close it before renaming.", "details": [], "kontakt_open": True}
         new_name = (new_name or "").strip()
         lib = next((l for l in get_libraries(self._db_path) if l["id"] == lib_id), None)
         if not lib or not new_name:
@@ -243,7 +260,8 @@ class KLibAPI:
             return {
                 "success": False,
                 "message": "Kontakt is open. Close it before deleting libraries.",
-                "details": []
+                "details": [],
+                "kontakt_open": True
             }
         return delete_library(
             self._db_path,

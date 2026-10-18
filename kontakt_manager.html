@@ -847,6 +847,24 @@
   .btn-rename:hover { filter: brightness(1.15); }
   .btn-rename:disabled { opacity: 0.3; cursor: not-allowed; filter: none; }
 
+  /* ── KONTAKT OPEN ── */
+  .modal-warn-icon {
+    width: 36px;
+    height: 36px;
+    background: #ffa50215;
+    border: 1px solid var(--warn);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    color: var(--warn);
+    font-size: 18px;
+  }
+
+  .kontakt-text { font-size: 12px; color: var(--text); line-height: 1.6; }
+  .kontakt-status { font-family: var(--mono); font-size: 11px; color: var(--warn); margin-top: 12px; min-height: 16px; }
+
   /* ── ARTWORK ── */
   .modal.wide {
     width: min(640px, calc(100vw - 48px));
@@ -903,15 +921,41 @@
 
   .art-tile { width: 280px; aspect-ratio: 420 / 201; }
   .art-banner { width: 100%; aspect-ratio: 1280 / 212; font-size: 18px; color: var(--text-hi); }
-  .art-header { width: 340px; height: 70px; justify-content: flex-start; padding: 0 12px; color: var(--text-hi); font-size: 15px; }
+  /* Kontakt's header bar at 1.5x: 52 logo-px tall, logo box 8 px from the left and 2 from the top */
+  .art-header { position: relative; width: 100%; height: 78px; justify-content: flex-start; align-items: flex-start;
+                padding: 3px 0 0 12px; color: var(--text-hi); font-size: 15px; }
+  .art-header.text-only { align-items: center; padding-top: 0; }
   .art-tile img, .art-banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
-  .art-header img { height: 47px; display: block; }
+  .art-header img { width: 340.5px; height: 70.5px; display: block; }
 
   .art-staged { outline: 2px solid var(--accent); outline-offset: 2px; }
 
   .color-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
   .color-row input[type=color] { width: 36px; height: 30px; border: 1px solid var(--border-hi); border-radius: 4px; background: none; padding: 0; cursor: pointer; }
   .color-row .text-input { width: 110px; }
+
+  /* crop editor */
+  .crop-view {
+    position: relative;
+    overflow: hidden;
+    margin: 0 auto;
+    background: #111;
+    border-radius: 4px;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
+    box-shadow: 0 0 0 1px var(--border-hi);
+  }
+
+  .crop-view.dragging { cursor: grabbing; }
+  .crop-frame { position: absolute; overflow: hidden; }
+  .crop-frame.outlined { outline: 1px dashed var(--accent); outline-offset: 0; }
+  .crop-view img { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; max-width: none; }
+
+  .crop-controls { display: flex; align-items: center; gap: 10px; margin-top: 14px; }
+  .crop-controls input[type=range] { flex: 1; accent-color: var(--accent); }
+  .crop-info { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-top: 10px; line-height: 1.6; }
+  .crop-info .warn { color: var(--warn); }
 
   .art-thumbs { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .art-thumbs img { height: 34px; border-radius: 3px; display: block; }
@@ -1184,6 +1228,63 @@
   </div>
 </div>
 
+<!-- Crop Modal (on top of the artwork editor) -->
+<div class="modal-overlay" id="cropModalOverlay">
+  <div class="modal wide">
+    <div class="modal-header">
+      <div class="modal-add-icon">⤧</div>
+      <div>
+        <div class="modal-title" id="cropTitle">Position Image</div>
+        <div class="modal-subtitle">Drag to move · scroll or use the slider to zoom</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <div class="crop-view" id="cropView">
+        <div class="crop-frame" id="cropFrame"><img id="cropImg" alt=""></div>
+      </div>
+      <div class="crop-controls">
+        <span class="field-label" style="margin:0">ZOOM</span>
+        <input type="range" id="cropZoom" min="0" max="1000" value="0" oninput="cropSlider(this.value)">
+        <button class="btn-small" onclick="cropPreset('fit')">FIT</button>
+        <button class="btn-small" onclick="cropPreset('fill')">FILL</button>
+      </div>
+      <div class="color-row" id="cropBgRow">
+        <span class="field-label" style="margin:0">BACKGROUND</span>
+        <input type="color" id="cropBgPick" oninput="setCropBg(this.value)">
+        <input class="text-input" id="cropBgHex" oninput="setCropBg(this.value, true)">
+        <button class="btn-small" onclick="setCropBg(crop.info.edge_color)">FROM IMAGE</button>
+      </div>
+      <div class="crop-info" id="cropInfo"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeCropper()">CANCEL</button>
+      <button class="btn-confirm-add" id="btnCropApply" onclick="applyCrop()">APPLY</button>
+    </div>
+  </div>
+</div>
+
+<!-- Kontakt Open Modal (shown when an action needs Kontakt closed) -->
+<div class="modal-overlay" id="kontaktModalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-warn-icon">⚠</div>
+      <div>
+        <div class="modal-title">Kontakt is open</div>
+        <div class="modal-subtitle">Close it to continue</div>
+      </div>
+    </div>
+    <div class="modal-body">
+      <p class="kontakt-text">KLib can't change Kontakt's files while Kontakt is running. Close Kontakt — and any DAW
+        that has Kontakt loaded as a plugin — then try again.</p>
+      <div class="kontakt-status" id="kontaktStatus"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeKontaktModal()">CANCEL</button>
+      <button class="btn-confirm-add" id="btnKontaktRetry" onclick="tryKontaktAgain()">TRY AGAIN</button>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast">
   <div class="toast-dot"></div>
@@ -1363,9 +1464,14 @@
 
   function handleLoadResult(result) {
     document.getElementById('loadingOverlay').classList.add('hidden');
+    document.getElementById('banner').style.display = 'none';  // a fresh load replaces any earlier message
 
     if (result.locked) {
       showBanner('Kontakt is currently open. Close it before using KLib.', 'error');
+      // TRY AGAIN re-reads the database once Kontakt is closed
+      openKontaktModal(() => guarded(
+        () => window.pywebview.api.init().then(r => Object.assign(r, {kontakt_open: r.locked})),
+        handleLoadResult));
       return;
     }
     if (!result.found) {
@@ -1576,14 +1682,11 @@
     const deleteCache = document.getElementById('checkCache').classList.contains('checked');
 
     closeModal();
-    document.getElementById('loadingOverlay').classList.remove('hidden');
-    document.getElementById('loadingOverlay').querySelector('.loading-text').textContent = 'REMOVING LIBRARY...';
-
-    window.pywebview.api.delete_library(lib.id, deleteDb, deleteFiles, deleteCache)
-      .then(result => {
-        document.getElementById('loadingOverlay').classList.add('hidden');
-        document.getElementById('loadingOverlay').querySelector('.loading-text').textContent = 'READING DATABASE...';
-
+    guarded(() => {
+      showLoading('REMOVING LIBRARY...');
+      return window.pywebview.api.delete_library(lib.id, deleteDb, deleteFiles, deleteCache)
+        .then(result => { hideLoading(); return result; });
+    }, result => {
         if (result.success) {
           libraries = libraries.filter(l => l.id !== libId);
           selectedId = null;
@@ -1595,7 +1698,56 @@
         } else {
           showToast(result.message, 'error');
         }
-      });
+    });
+  }
+
+  // ── KONTAKT OPEN: actions that need Kontakt closed retry through this ──
+  // call() returns the API promise; a result with kontakt_open shows the dialog, and TRY AGAIN re-runs
+  // the same call (same choices). Anything else closes the dialog and goes to onDone.
+  let kontaktRetry = null;
+
+  function guarded(call, onDone) {
+    return call().then(result => {
+      if (result && result.kontakt_open) {
+        openKontaktModal(() => guarded(call, onDone));
+        return;
+      }
+      closeKontaktModal();
+      onDone(result);
+    });
+  }
+
+  function openKontaktModal(retry) {
+    const overlay = document.getElementById('kontaktModalOverlay');
+    const again = overlay.classList.contains('visible');
+    kontaktRetry = retry;
+    document.getElementById('kontaktStatus').textContent = again
+      ? 'Kontakt still appears to be open. Make sure it has fully closed, then try again.' : '';
+    document.getElementById('btnKontaktRetry').disabled = false;
+    overlay.classList.add('visible');
+  }
+
+  function closeKontaktModal() {
+    document.getElementById('kontaktModalOverlay').classList.remove('visible');
+    kontaktRetry = null;
+  }
+
+  function tryKontaktAgain() {
+    if (!kontaktRetry) return;
+    const btn = document.getElementById('btnKontaktRetry');
+    btn.disabled = true;
+    document.getElementById('kontaktStatus').textContent = 'Checking…';
+    kontaktRetry().then(() => { btn.disabled = false; });
+  }
+
+  function showLoading(text) {
+    document.getElementById('loadingOverlay').classList.remove('hidden');
+    document.getElementById('loadingOverlay').querySelector('.loading-text').textContent = text;
+  }
+
+  function hideLoading() {
+    document.getElementById('loadingOverlay').classList.add('hidden');
+    document.getElementById('loadingOverlay').querySelector('.loading-text').textContent = 'READING DATABASE...';
   }
 
   // ── ADD LIBRARY ──
@@ -1726,9 +1878,8 @@
     const artwork = pendingAddArtwork ? pendingAddArtwork.changes : null;
     const artworkName = artwork ? addFlowName() : null;
     closeAddModal();
-    window.pywebview.api.add_library(folder, libraryName || null, newNicnt, artwork, artworkName).then(result => {
-      showToast(result.message, result.success ? 'success' : 'error');
-    });
+    guarded(() => window.pywebview.api.add_library(folder, libraryName || null, newNicnt, artwork, artworkName),
+      result => showToast(result.message, result.success ? 'success' : 'error'));
   }
 
   // ── LIBRARY NAME (stored in each patch; decides the Kontakt browser folder) ──
@@ -1788,11 +1939,10 @@
     const name = (document.getElementById('newLibName') || {}).value;
     if (!id || !name || !name.trim()) return;
     closeNameModal();
-    document.getElementById('loadingOverlay').classList.remove('hidden');
-    document.getElementById('loadingOverlay').querySelector('.loading-text').textContent = 'RENAMING PATCHES...';
-    window.pywebview.api.set_library_name(id, name.trim()).then(result => {
-      document.getElementById('loadingOverlay').classList.add('hidden');
-      document.getElementById('loadingOverlay').querySelector('.loading-text').textContent = 'READING DATABASE...';
+    guarded(() => {
+      showLoading('RENAMING PATCHES...');
+      return window.pywebview.api.set_library_name(id, name.trim()).then(result => { hideLoading(); return result; });
+    }, result => {
       showToast(result.message, result.success ? 'success' : 'error');
       if (selectedId === id) loadPatchNames(id);
     });
@@ -1824,9 +1974,11 @@
     const staged = slot => slot in art.staged ? 'art-staged' : '';
     const buttons = (slot, has) => `
       <div class="art-buttons">
+        ${art.staged[slot] && art.staged[slot].source ? `<button class="btn-small" onclick="adjustArt('${slot}')">ADJUST</button>` : ''}
         <button class="btn-small" onclick="pickArt('${slot}')">CHOOSE IMAGE…</button>
         <button class="btn-small" onclick="removeArt('${slot}')" ${has ? '' : 'disabled'}>REMOVE</button>
       </div>`;
+    const note = slot => art.notes[slot] ? ` <span style="color:var(--warn)">${esc(art.notes[slot])}</span>` : '';
     const tileFile = art.staged.tile ? 'new image' : (art.current.tile.file || '');
 
     document.getElementById('artModalBody').innerHTML = `
@@ -1834,7 +1986,7 @@
         <div class="art-section-head"><span class="art-title">ENLARGED VIEW TILE</span>${buttons('tile', tile)}</div>
         <div class="art-tile ${staged('tile')}">${tile ? `<img src="${tile}">` : 'No picture — Kontakt shows a folder icon'}</div>
         <div class="art-hint">Saved as a 420×316 image; Kontakt shows the middle 420×200 band (previewed here).
-          ${tileFile === 'MST_artwork.png' ? 'Currently coming from MST_artwork.png.' : ''}${art.tileNote ? ' ' + esc(art.tileNote) : ''}</div>
+          ${tileFile === 'MST_artwork.png' ? 'Currently coming from MST_artwork.png.' : ''}${note('tile')}</div>
       </div>
       <div class="art-section">
         <div class="art-section-head"><span class="art-title">CONDENSED VIEW BANNER</span>${buttons('banner', banner)}</div>
@@ -1842,11 +1994,11 @@
         <div class="field-label">Banner text (shown when there's no banner image)</div>
         <input class="text-input" id="artShortname" placeholder="${esc(art.name)}" value="${esc(shortname)}"
                oninput="art.staged.shortname = this.value; renderArtLight()">
-        <div class="art-hint">Banner image: 1280×212.</div>
+        <div class="art-hint">Banner image: 1280×212.${note('banner')}</div>
       </div>
       <div class="art-section">
         <div class="art-section-head"><span class="art-title">LIBRARY HEADER</span>${buttons('logo', logo)}</div>
-        <div class="art-header ${staged('logo')}" id="artHeaderPreview"
+        <div class="art-header ${staged('logo')} ${logo ? '' : 'text-only'}" id="artHeaderPreview"
              style="background:${logo ? (color || DEFAULT_HEADER) : DEFAULT_HEADER}">
           ${logo ? `<img src="${logo}">` : esc(art.name)}</div>
         <div class="color-row">
@@ -1886,12 +2038,197 @@
     window.pywebview.api.artwork_pick(slot).then(r => {
       if (r.cancelled) return;
       if (r.error) { showToast(r.error, 'error'); return; }
-      art.staged[slot] = {path: r.path, preview: r.preview};
-      if (slot === 'tile') art.tileNote = r.note;
-      if (r.note && slot !== 'tile') showToast(r.note, 'success');
+      openCropper(slot, r, null);
+    });
+  }
+
+  function adjustArt(slot) {
+    const s = art.staged[slot];
+    if (s && s.source) openCropper(slot, s.source, s.crop, s.background);
+  }
+
+  // ── CROP EDITOR ──
+  // Frame = the slot's output shape. The image sits under it at scale s (frame px per source px),
+  // top-left at (ox, oy) in frame px. Crop sent to Python = the frame's area in source pixels.
+  // view: the part of the output Kontakt shows (the tile's middle 420×201); the crop editor frames just that
+  const CROP_SLOTS = {
+    tile:   {label: 'Enlarged View Tile', out: [420, 316], view: [420, 201], cover: true},
+    banner: {label: 'Condensed View Banner', out: [1280, 212], cover: true},
+    logo:   {label: 'Library Header Logo', out: [227, 47], cover: false},
+  };
+  const CROP_MAX_WIDTH = 570;
+  const CROP_CHROME = 410;  // overlay margin + dialog header, controls, background row, info lines and footer, in px
+  // Kontakt's library header, in logo pixels (measured: the logo is drawn 2x, 8 px in, 2 px down,
+  // on a 52 px bar that spans the browser panel — ~359 px wide in a default window)
+  const KONTAKT_HEADER = {w: 359, h: 52, x: 8, y: 2};
+  let crop = null;
+
+  function setCropBg(value, fromText) {
+    value = (value || '').trim();
+    if (value && !value.startsWith('#')) value = '#' + value;
+    if (!/^#[0-9a-fA-F]{6}$/.test(value)) return;  // wait until the hex is complete
+    crop.bg = value.toLowerCase();
+    document.getElementById('cropFrame').style.background = crop.bg;
+    document.getElementById('cropBgPick').value = crop.bg;
+    if (!fromText) document.getElementById('cropBgHex').value = crop.bg;
+  }
+
+  function openCropper(slot, info, prevCrop, prevBg) {
+    const spec = CROP_SLOTS[slot];
+    const [tw, th] = spec.view || spec.out;
+    // The view is the slot's frame, except for the logo: there it's the whole header bar around the frame.
+    // Sized to fit the window without scrolling (the dialog's header, controls and footer take ~CROP_CHROME px).
+    const viewUnits = slot === 'logo' ? [KONTAKT_HEADER.w, KONTAKT_HEADER.h] : [tw, th];
+    const k = Math.min(CROP_MAX_WIDTH / viewUnits[0], Math.max(120, window.innerHeight - CROP_CHROME) / viewUnits[1]);
+    const FW = tw * k, FH = th * k;
+    const viewW = slot === 'logo' ? KONTAKT_HEADER.w * k : FW, viewH = slot === 'logo' ? KONTAKT_HEADER.h * k : FH;
+    const frameX = slot === 'logo' ? KONTAKT_HEADER.x * k : 0, frameY = slot === 'logo' ? KONTAKT_HEADER.y * k : 0;
+    const W = info.width, H = info.height;
+    const fill = Math.max(FW / W, FH / H), fit = Math.min(FW / W, FH / H);
+    crop = {slot, info, spec, FW, FH, W, H, fill, fit,
+            minS: fit * 0.25, maxS: Math.max(fill, fit) * 8, s: 1, ox: 0, oy: 0,
+            bg: spec.cover ? (prevBg || info.edge_color || '#000000') : null};
+
+    const view = document.getElementById('cropView'), frame = document.getElementById('cropFrame');
+    view.style.width = viewW + 'px';
+    view.style.height = viewH + 'px';
+    view.style.background = slot === 'logo' ? (artValue('color') || DEFAULT_HEADER) : '#111';
+    Object.assign(frame.style, {left: frameX + 'px', top: frameY + 'px', width: FW + 'px', height: FH + 'px'});
+    frame.classList.toggle('outlined', slot === 'logo');
+    // Tile / banner: whatever the image doesn't cover is filled with the background colour
+    document.getElementById('cropBgRow').style.display = spec.cover ? '' : 'none';
+    if (spec.cover) setCropBg(crop.bg);
+    else frame.style.background = 'transparent';
+    const img = document.getElementById('cropImg');
+    img.src = info.preview;
+    img.style.width = W + 'px';
+    img.style.height = H + 'px';
+    document.getElementById('cropTitle').textContent = 'Position Image — ' + spec.label;
+
+    if (prevCrop) {
+      const shown = toShownRect(spec, prevCrop);
+      crop.s = FW / shown.w;
+      crop.ox = -shown.x * crop.s;
+      crop.oy = -shown.y * crop.s;
+      clampCrop();
+    } else {
+      cropPreset(spec.cover ? 'fill' : 'fit', true);
+    }
+    renderCrop();
+    document.getElementById('cropModalOverlay').classList.add('visible');
+  }
+
+  // The saved image is spec.out; the editor frames spec.view centred in it. Convert crop rects between them.
+  function toSavedRect(spec, r) {
+    if (!spec.view) return r;
+    const h = r.h * spec.out[1] / spec.view[1];
+    return {x: r.x, y: r.y - (h - r.h) / 2, w: r.w, h};
+  }
+
+  function toShownRect(spec, r) {
+    if (!spec.view) return r;
+    const h = r.h * spec.view[1] / spec.out[1];
+    return {x: r.x, y: r.y + (r.h - h) / 2, w: r.w, h};
+  }
+
+  function clampCrop() {
+    const c = crop;
+    c.s = Math.min(c.maxS, Math.max(c.minS, c.s));
+    // The image can float freely (gaps take the background colour, or stay transparent for the logo),
+    // as long as part of it stays in the frame
+    const iw = c.W * c.s, ih = c.H * c.s;
+    const keepX = Math.min(iw, c.FW) * 0.2, keepY = Math.min(ih, c.FH) * 0.2;
+    c.ox = Math.min(c.FW - keepX, Math.max(keepX - iw, c.ox));
+    c.oy = Math.min(c.FH - keepY, Math.max(keepY - ih, c.oy));
+  }
+
+  function renderCrop() {
+    const c = crop;
+    document.getElementById('cropImg').style.transform = `translate(${c.ox}px, ${c.oy}px) scale(${c.s})`;
+    const t = Math.log(c.s / c.minS) / Math.log(c.maxS / c.minS);
+    document.getElementById('cropZoom').value = Math.round(1000 * Math.min(1, Math.max(0, t)));
+    // how many source pixels end up across the output width
+    const across = c.FW / c.s, [tw, th] = c.spec.view || c.spec.out;
+    const enlarged = tw / across;  // output pixels per source pixel
+    const lines = [`Source ${c.W}×${c.H} → ${tw}×${th} shown in Kontakt`];
+    if (c.spec.cover && enlarged > 1.05) lines.push(`<span class="warn">Enlarged ${enlarged.toFixed(1)}× — may look soft in Kontakt. Zoom out or use a larger image.</span>`);
+    if (!c.spec.cover) lines.push('Dashed box = the logo (227×47), shown where Kontakt draws it in its header bar. ' +
+                                  'Empty areas stay transparent.');
+    else lines.push('Zoom out or drag past an edge to leave space — it\'s filled with the background colour.');
+    document.getElementById('cropInfo').innerHTML = lines.join('<br>');
+  }
+
+  function zoomCropAt(px, py, newS) {
+    const c = crop;
+    const sx = (px - c.ox) / c.s, sy = (py - c.oy) / c.s;  // source point under the cursor
+    c.s = Math.min(c.maxS, Math.max(c.minS, newS));
+    c.ox = px - sx * c.s;
+    c.oy = py - sy * c.s;
+    clampCrop();
+    renderCrop();
+  }
+
+  function cropSlider(v) {
+    const c = crop;
+    zoomCropAt(c.FW / 2, c.FH / 2, c.minS * Math.pow(c.maxS / c.minS, v / 1000));
+  }
+
+  function cropPreset(kind, silent) {
+    const c = crop;
+    c.s = kind === 'fill' ? c.fill : c.fit;
+    c.ox = (c.FW - c.W * c.s) / 2;
+    c.oy = (c.FH - c.H * c.s) / 2;
+    clampCrop();
+    if (!silent) renderCrop();
+  }
+
+  function closeCropper() {
+    document.getElementById('cropModalOverlay').classList.remove('visible');
+    crop = null;
+  }
+
+  function applyCrop() {
+    const c = crop;
+    if (!c) return;
+    const rect = toSavedRect(c.spec, {x: -c.ox / c.s, y: -c.oy / c.s, w: c.FW / c.s, h: c.FH / c.s});
+    const btn = document.getElementById('btnCropApply');
+    btn.disabled = true;
+    window.pywebview.api.artwork_crop(c.slot, c.info.source, rect, c.bg).then(r => {
+      btn.disabled = false;
+      if (r.error) { showToast(r.error, 'error'); return; }
+      art.staged[c.slot] = {path: r.path, preview: r.preview, source: c.info, crop: rect, background: c.bg};
+      art.notes[c.slot] = r.note || '';
+      closeCropper();
       renderArt();
     });
   }
+
+  (function wireCropView() {
+    const view = document.getElementById('cropView');
+    let drag = null;
+    view.addEventListener('pointerdown', e => {
+      if (!crop) return;
+      drag = {x: e.clientX, y: e.clientY, ox: crop.ox, oy: crop.oy};
+      view.setPointerCapture(e.pointerId);
+      view.classList.add('dragging');
+    });
+    view.addEventListener('pointermove', e => {
+      if (!drag || !crop) return;
+      crop.ox = drag.ox + (e.clientX - drag.x);
+      crop.oy = drag.oy + (e.clientY - drag.y);
+      clampCrop();
+      renderCrop();
+    });
+    const end = () => { drag = null; view.classList.remove('dragging'); };
+    view.addEventListener('pointerup', end);
+    view.addEventListener('pointercancel', end);
+    view.addEventListener('wheel', e => {
+      if (!crop) return;
+      e.preventDefault();
+      const r = document.getElementById('cropFrame').getBoundingClientRect();  // zoom maths is in frame space
+      zoomCropAt(e.clientX - r.left, e.clientY - r.top, crop.s * Math.exp(-e.deltaY * 0.0015));
+    }, {passive: false});
+  })();
 
   function removeArt(slot) {
     art.staged[slot] = '';
@@ -1899,7 +2236,7 @@
   }
 
   function openArtModal(context) {
-    art = {...context, staged: {...(context.staged || {})}};
+    art = {...context, staged: {...(context.staged || {})}, notes: {}};
     const query = context.mode === 'edit'
       ? window.pywebview.api.artwork_info(context.libId, null)
       : window.pywebview.api.artwork_info(null, context.name);
@@ -1942,7 +2279,7 @@
     if (!Object.keys(changes).length) { closeArtModal(); return; }
     const libId = art.libId;
     closeArtModal();
-    window.pywebview.api.artwork_save(libId, changes).then(result => {
+    guarded(() => window.pywebview.api.artwork_save(libId, changes), result => {
       showToast(result.message, result.success ? 'success' : 'error');
       if (selectedId === libId) loadArtSummary(libId);
     });
@@ -1998,6 +2335,12 @@
 
   document.getElementById('artModalOverlay').addEventListener('click', function(e) {
     if (e.target === this) closeArtModal();
+  });
+  document.getElementById('cropModalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeCropper();
+  });
+  document.getElementById('kontaktModalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeKontaktModal();
   });
 
   document.getElementById('addModalOverlay').addEventListener('click', function(e) {

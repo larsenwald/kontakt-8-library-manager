@@ -156,7 +156,8 @@ def delete_library(db_path, lib_id, delete_db=True, delete_files=False, delete_c
             return {
                 "success": False,
                 "message": "Kontakt is currently running. Close it before making changes.",
-                "details": []
+                "details": [],
+                "kontakt_open": True
             }
 
         conn = _open(db_path)
