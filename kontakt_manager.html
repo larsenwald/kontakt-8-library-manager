@@ -658,6 +658,49 @@
 
   .scope-label { cursor: pointer; }
   .scope-label strong { color: var(--text); }
+  .scope-item.danger .scope-label,
+  .scope-item.danger .scope-label strong { color: var(--danger); }
+
+  .files-warning {
+    display: none;
+    background: #ff475718;
+    border: 1px solid var(--danger);
+    border-left-width: 4px;
+    border-radius: 6px;
+    padding: 14px 16px;
+    margin-bottom: 4px;
+  }
+
+  .files-warning.visible { display: block; }
+
+  .files-warning-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--danger);
+    margin-bottom: 8px;
+  }
+
+  .files-warning-path {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-hi);
+    word-break: break-all;
+    margin-bottom: 4px;
+  }
+
+  .files-warning-size {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--danger);
+    margin-bottom: 8px;
+  }
+
+  .files-warning p { font-size: 11px; color: var(--text); line-height: 1.6; }
+  .files-warning p strong { color: var(--danger); }
 
   .modal-footer {
     padding: 16px 28px 24px;
@@ -989,18 +1032,24 @@
           <div class="scope-label" onclick="toggleCheck('checkDb')"><strong>Database &amp; registration</strong> — removes from Kontakt browser, registry and Native Access</div>
         </div>
         <div class="scope-item">
-          <div class="scope-check checked" id="checkFiles" onclick="toggleCheck('checkFiles')"></div>
-          <div class="scope-label" onclick="toggleCheck('checkFiles')"><strong>Sample files on disk</strong> — deletes the library folder</div>
+          <div class="scope-check" id="checkFiles" onclick="toggleCheck('checkFiles')"></div>
+          <div class="scope-label" onclick="toggleCheck('checkFiles')"><strong>Sample files on disk</strong> — permanently deletes the library folder</div>
         </div>
         <div class="scope-item">
           <div class="scope-check checked" id="checkCache" onclick="toggleCheck('checkCache')"></div>
           <div class="scope-label" onclick="toggleCheck('checkCache')"><strong>Cache files</strong> — clears LibrariesCache entries</div>
         </div>
       </div>
+      <div class="files-warning" id="filesWarning">
+        <div class="files-warning-title">⚠ This folder and everything in it will be permanently deleted</div>
+        <div class="files-warning-path" id="filesWarningPath">—</div>
+        <div class="files-warning-size" id="filesWarningSize">Calculating size…</div>
+        <p>Files are <strong>not</strong> moved to the Recycle Bin and can't be recovered. Leave this unticked to remove the library from Kontakt but keep its samples.</p>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn-cancel" onclick="closeModal()">CANCEL</button>
-      <button class="btn-confirm-delete" onclick="confirmDelete()">DELETE LIBRARY</button>
+      <button class="btn-confirm-delete" id="btnConfirmDelete" onclick="confirmDelete()">REMOVE LIBRARY</button>
     </div>
   </div>
 </div>
@@ -1375,10 +1424,12 @@
     const lib = libraries.find(l => l.id === id);
     document.getElementById('modalLibName').textContent = lib.alias;
     document.getElementById('modalSubtitle').textContent = lib.path;
-    // Reset checkboxes
-    ['checkDb','checkFiles','checkCache'].forEach(id => {
-      document.getElementById(id).classList.add('checked');
-    });
+    // Reset checkboxes — deleting sample files is always opt-in
+    document.getElementById('checkDb').classList.add('checked');
+    document.getElementById('checkCache').classList.add('checked');
+    document.getElementById('checkFiles').classList.remove('checked');
+    folderSizeFor = null;
+    updateFilesWarning();
     document.getElementById('modalOverlay').classList.add('visible');
   }
 
@@ -1389,6 +1440,34 @@
 
   function toggleCheck(id) {
     document.getElementById(id).classList.toggle('checked');
+    if (id === 'checkFiles') updateFilesWarning();
+  }
+
+  let folderSizeFor = null;  // lib id whose folder size is shown / being calculated
+
+  function fmtBytes(n) {
+    const units = ['bytes', 'KB', 'MB', 'GB', 'TB'];
+    let i = 0;
+    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
+    return `${i ? n.toFixed(1) : n} ${units[i]}`;
+  }
+
+  function updateFilesWarning() {
+    const on = document.getElementById('checkFiles').classList.contains('checked');
+    const lib = libraries.find(l => l.id === pendingDeleteId);
+    document.getElementById('filesWarning').classList.toggle('visible', on);
+    document.getElementById('checkFiles').closest('.scope-item').classList.toggle('danger', on);
+    document.getElementById('btnConfirmDelete').textContent = on ? 'DELETE LIBRARY + FILES' : 'REMOVE LIBRARY';
+    if (!on || !lib || folderSizeFor === lib.id) return;
+
+    folderSizeFor = lib.id;
+    document.getElementById('filesWarningPath').textContent = lib.path;
+    const sizeEl = document.getElementById('filesWarningSize');
+    sizeEl.textContent = 'Calculating size…';
+    window.pywebview.api.get_folder_size(lib.path).then(bytes => {
+      if (folderSizeFor !== lib.id) return;
+      sizeEl.textContent = bytes ? `${fmtBytes(bytes)} will be deleted` : 'Folder not found on disk — nothing to delete';
+    });
   }
 
   function confirmDelete() {
