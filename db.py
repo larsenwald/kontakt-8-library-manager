@@ -2,10 +2,14 @@
 db.py — Kontakt 8 komplete.db3 read/write logic for KLib
 """
 
+import ctypes
 import os
 import glob
 import shutil
+import subprocess
+import sqlite3
 import apsw
+from artwork import forget as forget_artwork
 from cleanup import remove_remnants
 
 
@@ -36,13 +40,33 @@ def default_db_path():
     return path if os.path.isfile(path) else None
 
 
-def is_kontakt_running(db_path):
-    """Check if Kontakt is running by inspecting lock.lck size."""
-    lock = os.path.join(os.path.dirname(db_path), "lock.lck")
+KONTAKT_PROCESSES = ("kontakt 8.exe",)
+
+
+def _db_in_use(db_path):
+    """True if another process has the db open (Kontakt standalone, or Kontakt as a plugin in a DAW)."""
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateFileW.restype = ctypes.c_void_p
+    # Ask for the file with no sharing: Windows refuses (ERROR_SHARING_VIOLATION) while anyone has it open
+    handle = kernel32.CreateFileW(db_path, 0x80000000, 0, None, 3, 0x80, None)  # GENERIC_READ, OPEN_EXISTING
+    if handle in (None, ctypes.c_void_p(-1).value):
+        return ctypes.GetLastError() == 32
+    kernel32.CloseHandle(ctypes.c_void_p(handle))
+    return False
+
+
+def _kontakt_process_running():
     try:
-        return os.path.isfile(lock) and os.path.getsize(lock) > 0
-    except OSError:
+        out = subprocess.run(["tasklist", "/FO", "CSV", "/NH"], capture_output=True, text=True,
+                             creationflags=subprocess.CREATE_NO_WINDOW, timeout=10).stdout.lower()
+    except (OSError, subprocess.SubprocessError):
         return False
+    return any(f'"{name}"' in out for name in KONTAKT_PROCESSES)
+
+
+def is_kontakt_running(db_path):
+    """Kontakt standalone is running, or something (e.g. Kontakt inside a DAW) has its db open."""
+    return _kontakt_process_running() or (os.path.isfile(db_path) and _db_in_use(db_path))
 
 
 def _open(db_path):
@@ -173,6 +197,11 @@ def delete_library(db_path, lib_id, delete_db=True, delete_files=False, delete_c
                     "message": reg_details[-1].lstrip("✗ ") + ". Nothing was deleted.",
                     "details": details
                 }
+            # KLib's own header colour / banner text for this library (vendor rows are left alone)
+            try:
+                forget_artwork(({alias} | own_banks) - other_names)
+            except (OSError, sqlite3.Error) as e:
+                details.append(f"✗ Could not clear header colour / banner text: {e}")
 
             # Get all sound_info IDs for this library (needed for junction tables)
             sound_ids = [r[0] for r in cur.execute(
@@ -266,6 +295,18 @@ def delete_library(db_path, lib_id, delete_db=True, delete_files=False, delete_c
                 conn.close()
             except Exception:
                 pass
+
+
+def browser_name(db_path, lib_id):
+    """The library's folder name in Kontakt's browser: its patches' most common top-level bank."""
+    conn = _open(db_path)
+    try:
+        rows = list(conn.cursor().execute(
+            "SELECT b.entry1, COUNT(*) AS n FROM k_sound_info s JOIN k_bank_chain b ON b.id = s.bank_chain_id "
+            "WHERE s.content_path_id = ? GROUP BY b.entry1 ORDER BY n DESC LIMIT 1", (lib_id,)))
+        return rows[0][0] if rows else None
+    finally:
+        conn.close()
 
 
 def set_bank_name(db_path, lib_id, new_name, changed_paths):

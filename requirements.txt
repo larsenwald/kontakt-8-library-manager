@@ -1,0 +1,3 @@
+pywebview>=6.2
+apsw>=3.54
+pillow>=13.0

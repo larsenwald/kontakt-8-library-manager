@@ -6,10 +6,12 @@ Launches a pywebview window and exposes the Python API to the HTML frontend.
 import ctypes
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import webview
-from db import get_libraries, delete_library, default_db_path, is_kontakt_running, set_bank_name
+from artwork import ArtworkError, apply_artwork, prepare_image, read_artwork, reapply_overrides, rename_artwork
+from db import browser_name, get_libraries, delete_library, default_db_path, is_kontakt_running, set_bank_name
 from patches import scan_library, set_library_name, summarize
 from cleanup import is_admin
 from register import check_new_library, inspect_folder, register_library, suggest_snpid
@@ -49,6 +51,10 @@ class KLibAPI:
             locked = is_kontakt_running(path)
             if locked:
                 return {"found": True, "db_path": path, "locked": True, "libraries": []}
+            try:
+                reapply_overrides()  # vendor installs can replace the shared colour / banner-text dbs
+            except (OSError, sqlite3.Error):
+                pass
             try:
                 libs = get_libraries(path)
                 return {"found": True, "db_path": path, "locked": False, "libraries": libs}
@@ -106,7 +112,7 @@ class KLibAPI:
         except Exception:
             return []
 
-    def add_library(self, folder, library_name=None, new_nicnt=None):
+    def add_library(self, folder, library_name=None, new_nicnt=None, artwork=None, artwork_name=None):
         db_path = self._db_path or default_db_path()
         if db_path and is_kontakt_running(db_path):
             return {
@@ -139,7 +145,54 @@ class KLibAPI:
                                f"(originals backed up to {renamed['backup_dir']})")
         result = register_library(folder)
         result["details"] = details + result["details"]
+        # Artwork picked in the add dialog, filed under the library's browser folder name
+        if result["success"] and artwork and artwork_name:
+            try:
+                result["details"] += apply_artwork(artwork_name, artwork)
+            except (ArtworkError, OSError, sqlite3.Error) as e:
+                result["details"].append(f"✗ Artwork not saved: {e}")
+                result["message"] += " (artwork could not be saved)"
         return result
+
+    # ── Artwork: tile, banner, header logo + colour, banner text ──
+    def artwork_info(self, lib_id=None, name=None):
+        """Current artwork by library id (installed) or by browser folder name (while adding)."""
+        if lib_id is not None:
+            name = browser_name(self._db_path, lib_id) if self._db_path else None
+            if not name:
+                lib = next((l for l in get_libraries(self._db_path) if l["id"] == lib_id), None)
+                name = lib["alias"] if lib else None
+        if not name:
+            return {"found": False}
+        info = read_artwork(name)
+        info["found"] = True
+        return info
+
+    def artwork_pick(self, slot):
+        result = webview.windows[0].create_file_dialog(
+            webview.OPEN_DIALOG, allow_multiple=False,
+            file_types=("Images (*.png;*.jpg;*.jpeg;*.webp;*.bmp)", "All files (*.*)"))
+        if not result:
+            return {"cancelled": True}
+        try:
+            return prepare_image(slot, result[0])
+        except ArtworkError as e:
+            return {"error": str(e)}
+
+    def artwork_save(self, lib_id, changes):
+        if not self._db_path:
+            return {"success": False, "message": "No database loaded.", "details": []}
+        if is_kontakt_running(self._db_path):
+            return {"success": False, "message": "Kontakt is open. Close it before changing artwork.", "details": []}
+        info = self.artwork_info(lib_id=lib_id)
+        if not info.get("found"):
+            return {"success": False, "message": "Library not found.", "details": []}
+        try:
+            details = apply_artwork(info["name"], changes)
+        except (ArtworkError, OSError, sqlite3.Error) as e:
+            return {"success": False, "message": f"Could not save artwork: {e}", "details": []}
+        return {"success": True, "message": f"Artwork saved for '{info['name']}'. Reopen Kontakt to see it.",
+                "details": details}
 
     # ── Library name stored in patches ──
     def library_patches(self, lib_id):
@@ -159,6 +212,7 @@ class KLibAPI:
         if not lib or not new_name:
             return {"success": False, "message": "Library not found or name empty.", "details": []}
 
+        old_name = browser_name(self._db_path, lib_id)
         renamed = set_library_name(lib["path"], new_name, label=lib["alias"])
         changed_paths = [os.path.join(lib["path"], rel) for rel in renamed["changed"]]
         details = [f"✗ {rel}: {err}" for rel, err in renamed["failed"]]
@@ -168,6 +222,12 @@ class KLibAPI:
             return {"success": False,
                     "message": f"Patches were renamed but the database update failed: {e}",
                     "details": details + [f"Originals: {renamed['backup_dir']}"]}
+        # Artwork is looked up by the browser folder name, so it follows the rename
+        if renamed["changed"] and not renamed["failed"]:
+            try:
+                details += rename_artwork(old_name, new_name)
+            except (OSError, sqlite3.Error) as e:
+                details.append(f"✗ Artwork not moved to the new name: {e}")
         if not renamed["changed"]:
             return {"success": True, "message": f"All patches already say '{new_name}'.", "details": details}
         return {"success": not renamed["failed"],

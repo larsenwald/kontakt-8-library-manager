@@ -847,6 +847,76 @@
   .btn-rename:hover { filter: brightness(1.15); }
   .btn-rename:disabled { opacity: 0.3; cursor: not-allowed; filter: none; }
 
+  /* ── ARTWORK ── */
+  .modal.wide {
+    width: min(640px, calc(100vw - 48px));
+    max-height: calc(100vh - 48px);
+    display: flex;
+    flex-direction: column;
+  }
+
+  .modal.wide .modal-body { overflow-y: auto; }
+
+  .art-section { padding: 14px 0; border-bottom: 1px solid var(--border); }
+  .art-section:first-child { padding-top: 0; }
+  .art-section:last-child { border-bottom: none; padding-bottom: 0; }
+
+  .art-section-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .art-title { font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--text-hi); letter-spacing: 0.06em; }
+  .art-hint { font-size: 11px; color: var(--text-dim); line-height: 1.5; margin-top: 6px; }
+
+  .art-buttons { display: flex; gap: 6px; flex-shrink: 0; }
+
+  .btn-small {
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    color: var(--text);
+    background: transparent;
+    border: 1px solid var(--border-hi);
+    border-radius: 4px;
+    padding: 5px 10px;
+    cursor: pointer;
+  }
+
+  .btn-small:hover { color: var(--accent); border-color: var(--accent); }
+  .btn-small:disabled { opacity: 0.3; cursor: not-allowed; }
+
+  .art-tile, .art-banner, .art-header {
+    background: #2b2b2b;
+    border-radius: 6px;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    font-size: 12px;
+  }
+
+  .art-tile { width: 280px; aspect-ratio: 420 / 201; }
+  .art-banner { width: 100%; aspect-ratio: 1280 / 212; font-size: 18px; color: var(--text-hi); }
+  .art-header { width: 340px; height: 70px; justify-content: flex-start; padding: 0 12px; color: var(--text-hi); font-size: 15px; }
+  .art-tile img, .art-banner img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .art-header img { height: 47px; display: block; }
+
+  .art-staged { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .color-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .color-row input[type=color] { width: 36px; height: 30px; border: 1px solid var(--border-hi); border-radius: 4px; background: none; padding: 0; cursor: pointer; }
+  .color-row .text-input { width: 110px; }
+
+  .art-thumbs { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .art-thumbs img { height: 34px; border-radius: 3px; display: block; }
+  .art-thumbs .art-swatch { width: 34px; height: 34px; border-radius: 3px; border: 1px solid var(--border-hi); }
+
   /* ── STATUS TOAST ── */
   .toast {
     position: fixed;
@@ -1090,6 +1160,26 @@
     <div class="modal-footer">
       <button class="btn-cancel" onclick="closeNameModal()">CANCEL</button>
       <button class="btn-confirm-add" id="btnConfirmName" onclick="confirmName()">RENAME PATCHES</button>
+    </div>
+  </div>
+</div>
+
+<!-- Artwork Modal -->
+<div class="modal-overlay" id="artModalOverlay">
+  <div class="modal wide">
+    <div class="modal-header">
+      <div class="modal-add-icon">▣</div>
+      <div>
+        <div class="modal-title">Library Artwork</div>
+        <div class="modal-subtitle" id="artModalName">—</div>
+      </div>
+    </div>
+    <div class="modal-body" id="artModalBody">
+      <!-- populated by JS -->
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeArtModal()">CANCEL</button>
+      <button class="btn-confirm-add" id="btnArtSave" onclick="saveArt()">SAVE ARTWORK</button>
     </div>
   </div>
 </div>
@@ -1376,6 +1466,10 @@
             <div class="info-cell-label">Library Name In Patches</div>
             <div class="info-cell-value" id="patchNames">reading patches…</div>
           </div>
+          <div class="info-cell full">
+            <div class="info-cell-label">Library Artwork</div>
+            <div class="info-cell-value" id="artSummary">reading artwork…</div>
+          </div>
         </div>
 
         ${canDelete ? '' : `
@@ -1392,6 +1486,9 @@
           <button class="btn-rename" onclick="openNameModal(${lib.id})" ${canDelete ? '' : 'disabled'}>
             SET LIBRARY NAME
           </button>
+          <button class="btn-rename" onclick="openArtModal({mode: 'edit', libId: ${lib.id}})" ${canDelete ? '' : 'disabled'}>
+            ARTWORK
+          </button>
           <button class="btn-delete" onclick="openModal(${lib.id})" ${canDelete ? '' : 'disabled'}>
             <span>⚠</span> REMOVE LIBRARY
           </button>
@@ -1399,6 +1496,7 @@
       </div>
     `;
     loadPatchNames(lib.id);
+    loadArtSummary(lib.id);
   }
 
   function loadPatchNames(id) {
@@ -1508,10 +1606,13 @@
   }
 
   let generatingNicnt = false;
+  let pendingAddInfo = null;
 
   function openAddLibrary() {
     window.pywebview.api.pick_library_folder().then(info => {
       if (info.cancelled) return;
+      pendingAddInfo = info;
+      pendingAddArtwork = null;
       document.getElementById('addModalFolder').textContent = info.folder;
 
       if (info.needs_nicnt) {
@@ -1555,7 +1656,7 @@
         <div class="field-label">Kontakt browser folder</div>
         <input class="text-input" id="addLibName" value="${esc(suggestedName(info.patches, p.reg_key))}">` : '';
 
-      document.getElementById('addModalBody').innerHTML = grid + patches + note;
+      document.getElementById('addModalBody').innerHTML = grid + patches + (info.ok ? addArtworkRow() : '') + note;
       document.getElementById('btnConfirmAdd').disabled = !info.ok;
       document.getElementById('addModalOverlay').classList.add('visible');
     });
@@ -1585,7 +1686,8 @@
       <div class="field-label">SNPID (3 letters/digits)</div>
       <input class="text-input" id="newNicntSnpid" value="${esc(s.snpid)}" maxlength="3"
              style="text-transform:uppercase; width:90px" oninput="checkNicntForm()">
-      <div id="nicntProblems"></div>`;
+      <div id="nicntProblems"></div>
+      ${addArtworkRow()}`;
     document.getElementById('addModalOverlay').classList.add('visible');
     checkNicntForm();
   }
@@ -1621,8 +1723,10 @@
       const nameInput = document.getElementById('addLibName');
       libraryName = nameInput ? nameInput.value.trim() : null;
     }
+    const artwork = pendingAddArtwork ? pendingAddArtwork.changes : null;
+    const artworkName = artwork ? addFlowName() : null;
     closeAddModal();
-    window.pywebview.api.add_library(folder, libraryName || null, newNicnt).then(result => {
+    window.pywebview.api.add_library(folder, libraryName || null, newNicnt, artwork, artworkName).then(result => {
       showToast(result.message, result.success ? 'success' : 'error');
     });
   }
@@ -1696,6 +1800,204 @@
 
   document.getElementById('nameModalOverlay').addEventListener('click', function(e) {
     if (e.target === this) closeNameModal();
+  });
+
+  // ── ARTWORK (tile · banner + banner text · header logo + colour) ──
+  // art.staged[slot] = {path, preview} to set, '' to remove; art.staged.color / .shortname when edited
+  let art = null;
+  let pendingAddArtwork = null;
+  const DEFAULT_HEADER = '#2b2b2b';
+
+  function artShown(slot) {
+    const s = art.staged[slot];
+    if (s === '') return null;
+    return s ? s.preview : art.current[slot].preview;
+  }
+
+  function artValue(field) {
+    return field in art.staged ? art.staged[field] : (art.current[field] || '');
+  }
+
+  function renderArt() {
+    const tile = artShown('tile'), banner = artShown('banner'), logo = artShown('logo');
+    const color = artValue('color'), shortname = artValue('shortname');
+    const staged = slot => slot in art.staged ? 'art-staged' : '';
+    const buttons = (slot, has) => `
+      <div class="art-buttons">
+        <button class="btn-small" onclick="pickArt('${slot}')">CHOOSE IMAGE…</button>
+        <button class="btn-small" onclick="removeArt('${slot}')" ${has ? '' : 'disabled'}>REMOVE</button>
+      </div>`;
+    const tileFile = art.staged.tile ? 'new image' : (art.current.tile.file || '');
+
+    document.getElementById('artModalBody').innerHTML = `
+      <div class="art-section">
+        <div class="art-section-head"><span class="art-title">ENLARGED VIEW TILE</span>${buttons('tile', tile)}</div>
+        <div class="art-tile ${staged('tile')}">${tile ? `<img src="${tile}">` : 'No picture — Kontakt shows a folder icon'}</div>
+        <div class="art-hint">Saved as a 420×316 image; Kontakt shows the middle 420×200 band (previewed here).
+          ${tileFile === 'MST_artwork.png' ? 'Currently coming from MST_artwork.png.' : ''}${art.tileNote ? ' ' + esc(art.tileNote) : ''}</div>
+      </div>
+      <div class="art-section">
+        <div class="art-section-head"><span class="art-title">CONDENSED VIEW BANNER</span>${buttons('banner', banner)}</div>
+        <div class="art-banner ${staged('banner')}">${banner ? `<img src="${banner}">` : esc(shortname || art.name)}</div>
+        <div class="field-label">Banner text (shown when there's no banner image)</div>
+        <input class="text-input" id="artShortname" placeholder="${esc(art.name)}" value="${esc(shortname)}"
+               oninput="art.staged.shortname = this.value; renderArtLight()">
+        <div class="art-hint">Banner image: 1280×212.</div>
+      </div>
+      <div class="art-section">
+        <div class="art-section-head"><span class="art-title">LIBRARY HEADER</span>${buttons('logo', logo)}</div>
+        <div class="art-header ${staged('logo')}" id="artHeaderPreview"
+             style="background:${logo ? (color || DEFAULT_HEADER) : DEFAULT_HEADER}">
+          ${logo ? `<img src="${logo}">` : esc(art.name)}</div>
+        <div class="color-row">
+          <input type="color" id="artColorPick" value="${color || DEFAULT_HEADER}"
+                 oninput="setArtColor(this.value)">
+          <input class="text-input" id="artColorHex" value="${esc(color)}" placeholder="default"
+                 oninput="setArtColor(this.value, true)">
+          <button class="btn-small" onclick="setArtColor('')" ${color ? '' : 'disabled'}>DEFAULT</button>
+        </div>
+        <div class="art-hint">Logo: transparent PNG, fitted to 227×47. The header colour only shows behind a logo.</div>
+      </div>`;
+  }
+
+  // Refresh just the previews that depend on typed values, so inputs keep focus
+  function renderArtLight() {
+    const banner = document.querySelector('.art-banner');
+    if (banner && !artShown('banner')) banner.textContent = artValue('shortname') || art.name;
+    const header = document.getElementById('artHeaderPreview');
+    if (header) header.style.background = artShown('logo') ? (artValue('color') || DEFAULT_HEADER) : DEFAULT_HEADER;
+  }
+
+  function setArtColor(value, fromText) {
+    value = (value || '').trim();
+    if (value && !value.startsWith('#')) value = '#' + value;
+    if (value && !/^#[0-9a-fA-F]{6}$/.test(value)) return;  // wait until the hex is complete
+    art.staged.color = value;
+    if (!fromText) {
+      const hex = document.getElementById('artColorHex');
+      if (hex) hex.value = value;
+    }
+    if (value) document.getElementById('artColorPick').value = value;
+    if (!value) { renderArt(); return; }
+    renderArtLight();
+  }
+
+  function pickArt(slot) {
+    window.pywebview.api.artwork_pick(slot).then(r => {
+      if (r.cancelled) return;
+      if (r.error) { showToast(r.error, 'error'); return; }
+      art.staged[slot] = {path: r.path, preview: r.preview};
+      if (slot === 'tile') art.tileNote = r.note;
+      if (r.note && slot !== 'tile') showToast(r.note, 'success');
+      renderArt();
+    });
+  }
+
+  function removeArt(slot) {
+    art.staged[slot] = '';
+    renderArt();
+  }
+
+  function openArtModal(context) {
+    art = {...context, staged: {...(context.staged || {})}};
+    const query = context.mode === 'edit'
+      ? window.pywebview.api.artwork_info(context.libId, null)
+      : window.pywebview.api.artwork_info(null, context.name);
+    query.then(info => {
+      if (!info.found) { showToast('Library not found', 'error'); return; }
+      art.current = info;
+      art.name = info.name;
+      document.getElementById('artModalName').textContent = info.name;
+      document.getElementById('btnArtSave').textContent = context.mode === 'edit' ? 'SAVE ARTWORK' : 'DONE';
+      renderArt();
+      document.getElementById('artModalOverlay').classList.add('visible');
+    });
+  }
+
+  function closeArtModal() {
+    document.getElementById('artModalOverlay').classList.remove('visible');
+    art = null;
+  }
+
+  function artChanges() {
+    const changes = {};
+    for (const slot of ['tile', 'banner', 'logo']) {
+      if (slot in art.staged) changes[slot] = art.staged[slot] === '' ? '' : art.staged[slot].path;
+    }
+    if ('color' in art.staged && art.staged.color !== (art.current.color || '')) changes.color = art.staged.color;
+    if ('shortname' in art.staged && art.staged.shortname.trim() !== (art.current.shortname || '')) changes.shortname = art.staged.shortname.trim();
+    return changes;
+  }
+
+  function saveArt() {
+    if (!art) return;
+    const changes = artChanges();
+    if (art.mode === 'add') {
+      // Kept until the library is added; applied under its browser folder name then
+      pendingAddArtwork = Object.keys(changes).length ? {changes, staged: art.staged} : null;
+      closeArtModal();
+      renderAddArtSummary();
+      return;
+    }
+    if (!Object.keys(changes).length) { closeArtModal(); return; }
+    const libId = art.libId;
+    closeArtModal();
+    window.pywebview.api.artwork_save(libId, changes).then(result => {
+      showToast(result.message, result.success ? 'success' : 'error');
+      if (selectedId === libId) loadArtSummary(libId);
+    });
+  }
+
+  function artSummaryHtml(info) {
+    const parts = [];
+    if (info.tile.preview) parts.push(`<img src="${info.tile.preview}" title="Enlarged view tile">`);
+    if (info.banner.preview) parts.push(`<img src="${info.banner.preview}" title="Condensed view banner">`);
+    if (info.logo.preview) parts.push(`<span style="background:${info.color || DEFAULT_HEADER};border-radius:3px;padding:2px 4px"><img src="${info.logo.preview}" style="height:30px" title="Header logo"></span>`);
+    else if (info.color) parts.push(`<span class="art-swatch" style="background:${info.color}" title="Header colour"></span>`);
+    if (info.shortname && !info.banner.preview) parts.push(`<span class="name-chip">${esc(info.shortname)}</span>`);
+    return parts.length ? `<div class="art-thumbs">${parts.join('')}</div>` : '<span class="dim">None — Kontakt shows a folder icon and the library name</span>';
+  }
+
+  function loadArtSummary(id) {
+    window.pywebview.api.artwork_info(id, null).then(info => {
+      const el = document.getElementById('artSummary');
+      if (!el || selectedId !== id) return;
+      el.innerHTML = info.found ? artSummaryHtml(info) : '—';
+    });
+  }
+
+  // Add flow: the library's browser folder name is whatever the patches will be called
+  function addFlowName() {
+    const el = document.getElementById('newNicntName') || document.getElementById('addLibName');
+    return (el && el.value.trim()) || (pendingAddInfo && pendingAddInfo.product && pendingAddInfo.product.reg_key) || '';
+  }
+
+  function openArtForAdd() {
+    const name = addFlowName();
+    if (!name) { showToast('Set the library name first', 'error'); return; }
+    openArtModal({mode: 'add', name, staged: pendingAddArtwork ? pendingAddArtwork.staged : {}});
+  }
+
+  function renderAddArtSummary() {
+    const el = document.getElementById('addArtSummary');
+    if (!el) return;
+    const c = pendingAddArtwork ? pendingAddArtwork.changes : {};
+    const labels = {tile: 'tile', banner: 'banner', logo: 'header logo', color: 'header colour', shortname: 'banner text'};
+    const set = Object.keys(c).map(k => labels[k] + (c[k] === '' ? ' (removed)' : ''));
+    el.textContent = set.length ? 'Will set: ' + set.join(', ') : 'Keep existing / none';
+  }
+
+  function addArtworkRow() {
+    return `
+      <div class="field-label">Artwork (optional)</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+        <span class="info-cell-value dim" id="addArtSummary">Keep existing / none</span>
+        <button class="btn-small" onclick="openArtForAdd()">SET ARTWORK…</button>
+      </div>`;
+  }
+
+  document.getElementById('artModalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeArtModal();
   });
 
   document.getElementById('addModalOverlay').addEventListener('click', function(e) {
