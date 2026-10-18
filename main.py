@@ -10,6 +10,7 @@ import sys
 import webview
 from db import get_libraries, delete_library, default_db_path, is_kontakt_running
 from cleanup import is_admin
+from register import inspect_folder, register_library
 
 
 def resource_path(relative):
@@ -65,6 +66,27 @@ class KLibAPI:
             return {"found": True, "db_path": path, "locked": False, "libraries": libs}
         except Exception as e:
             return {"found": True, "db_path": path, "locked": False, "libraries": [], "error": str(e)}
+
+    # ── Add a library ──
+    def pick_library_folder(self):
+        """Folder picker → preview of what adding it would register (nothing is written)."""
+        result = webview.windows[0].create_file_dialog(webview.FOLDER_DIALOG)
+        if not result:
+            return {"cancelled": True}
+        folder = result[0] if isinstance(result, (list, tuple)) else result
+        info = inspect_folder(folder)
+        info["folder"] = os.path.normpath(folder)
+        return info
+
+    def add_library(self, folder):
+        db_path = self._db_path or default_db_path()
+        if db_path and is_kontakt_running(db_path):
+            return {
+                "success": False,
+                "message": "Kontakt is open. Close it before adding libraries.",
+                "details": []
+            }
+        return register_library(folder)
 
     # ── Delete a library ──
     def delete_library(self, lib_id, delete_db, delete_files, delete_cache):
