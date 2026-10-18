@@ -10,6 +10,8 @@ Layout (little-endian), as found in vendor and generated .nicnt files:
 Generated files may carry placeholder bytes in the count/size fields, so those are not trusted.
 """
 
+import glob
+import os
 import struct
 import xml.etree.ElementTree as ET
 
@@ -80,6 +82,20 @@ def _files(d):
             return []
         files.append((name, start, end - start))
     return files
+
+
+def find_nicnt(folder):
+    """Path of the folder's .nicnt, None if there isn't one. Raises if there are several."""
+    matches = glob.glob(os.path.join(glob.escape(folder), "*.nicnt"))  # folder names often contain [brackets]
+    if len(matches) > 1:
+        raise NicntError(f"more than one .nicnt in {folder}: " + ", ".join(os.path.basename(m) for m in matches))
+    return matches[0] if matches else None
+
+
+def artwork_names(files):
+    """Library names under .PAResources|image|<name>| — the NI Resources\\image folders this .nicnt fills."""
+    return {parts[2] for parts in (n.split("|") for n, _, _ in files)
+            if len(parts) == 4 and parts[0] == ".PAResources" and parts[1] == "image"}
 
 
 def read_nicnt(path):

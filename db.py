@@ -154,8 +154,18 @@ def delete_library(db_path, lib_id, delete_db=True, delete_files=False, delete_c
 
         # ── 1. Delete database entries ──
         if delete_db:
+            # Names this library's artwork folder may go by, and names other libraries still use
+            own_banks = {r[0] for r in cur.execute(
+                "SELECT DISTINCT b.entry1 FROM k_sound_info s JOIN k_bank_chain b ON b.id = s.bank_chain_id "
+                "WHERE s.content_path_id = ?", (lib_id,))}
+            other_names = {r[0] for r in cur.execute(
+                "SELECT alias FROM k_content_path WHERE id != ? AND alias IS NOT NULL "
+                "UNION SELECT DISTINCT b.entry1 FROM k_sound_info s JOIN k_bank_chain b ON b.id = s.bank_chain_id "
+                "WHERE s.content_path_id != ?", (lib_id, lib_id))}
+
             # Registration first: if the HKLM key survives, Kontakt re-adds the library on launch
-            ok, reg_details = remove_remnants(lib_path, product_id, upid)
+            ok, reg_details = remove_remnants(lib_path, product_id, upid,
+                                              extra_names={alias} | own_banks, protected_names=other_names)
             details.extend(reg_details)
             if not ok:
                 return {

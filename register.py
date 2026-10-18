@@ -5,26 +5,15 @@ Writes the library's system registration; Kontakt picks the library up and index
 time it starts (it re-registers anything with an HKLM\\SOFTWARE\\Native Instruments\\<RegKey> key).
 """
 
-import glob
 import json
 import os
 import winreg
 
-from cleanup import NI_KEY, SERVICE_CENTER_DIR, INSTALLED_PRODUCTS_DIR, _WOW64, _norm, is_admin
-from nicnt import NicntError, extract, read_nicnt
+from cleanup import (NI_KEY, SERVICE_CENTER_DIR, INSTALLED_PRODUCTS_DIR, NI_RESOURCES_IMAGE_DIR,
+                     _WOW64, _norm, is_admin)
+from nicnt import NicntError, extract, find_nicnt, read_nicnt
 
-NI_RESOURCES_IMAGE_DIR = os.path.join(
-    os.environ.get("PUBLIC", r"C:\Users\Public"), "Documents", "NI Resources", "image",
-)
 CONTENT_VERSION = "1.0.0"
-
-
-def find_nicnt(folder):
-    """Path of the folder's .nicnt, None if there isn't one. Raises if there are several."""
-    matches = glob.glob(os.path.join(glob.escape(folder), "*.nicnt"))  # folder names often contain [brackets]
-    if len(matches) > 1:
-        raise NicntError(f"more than one .nicnt in {folder}: " + ", ".join(os.path.basename(m) for m in matches))
-    return matches[0] if matches else None
 
 
 def _registered_dir(reg_key):

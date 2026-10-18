@@ -10,8 +10,11 @@ import ctypes
 import glob
 import json
 import os
+import shutil
 import winreg
 import xml.etree.ElementTree as ET
+
+from nicnt import NicntError, artwork_names, find_nicnt, read_nicnt
 
 
 NI_KEY = r"SOFTWARE\Native Instruments"
@@ -23,6 +26,9 @@ SERVICE_CENTER_DIR = os.path.join(
 INSTALLED_PRODUCTS_DIR = os.path.join(
     os.environ.get("PUBLIC", r"C:\Users\Public"),
     "Documents", "Native Instruments", "installed_products",
+)
+NI_RESOURCES_IMAGE_DIR = os.path.join(
+    os.environ.get("PUBLIC", r"C:\Users\Public"), "Documents", "NI Resources", "image",
 )
 
 _WOW64 = winreg.KEY_WOW64_64KEY
@@ -90,10 +96,30 @@ def _key_exists(hive, subkey):
         return False
 
 
-def find_remnants(lib_path, product_id, upid):
+def _artwork_dirs(lib_path, reg_keys, extra_names, protected_names):
+    """NI Resources\\image\\<name> folders belonging to this library (never one another library uses)."""
+    names = set(reg_keys) | set(extra_names)
+    try:
+        nicnt_path = find_nicnt(lib_path)
+        if nicnt_path:
+            names |= artwork_names(read_nicnt(nicnt_path)["files"])
+    except (NicntError, OSError):
+        pass
+    protected = {n.lower() for n in protected_names}
+    dirs = []
+    for name in sorted({n.lower() for n in names if n} - protected - {"kontakt"}):
+        path = os.path.join(NI_RESOURCES_IMAGE_DIR, name)
+        if os.path.isdir(path):
+            dirs.append(path)
+    return dirs
+
+
+def find_remnants(lib_path, product_id, upid, extra_names=(), protected_names=()):
     """
     Locate everything registering this library outside the Kontakt db. Returns:
-      { reg_keys: [str], xml_files: [str], json_files: [str] }
+      { reg_keys: [str], xml_files: [str], json_files: [str], image_dirs: [str] }
+    extra_names:     other names the library goes by (db alias, its patches' bank names)
+    protected_names: names other installed libraries use — their artwork folders are left alone
     """
     reg_keys, xml_files = set(), []
     for xml_path, reg_key in _service_center_matches(upid, product_id):
@@ -113,7 +139,9 @@ def find_remnants(lib_path, product_id, upid):
         if name in reg_keys or (content_dir and _norm(content_dir) == _norm(lib_path)):
             json_files.append(json_path)
 
-    return {"reg_keys": sorted(reg_keys), "xml_files": xml_files, "json_files": json_files}
+    image_dirs = _artwork_dirs(lib_path, reg_keys, extra_names, protected_names)
+    return {"reg_keys": sorted(reg_keys), "xml_files": xml_files, "json_files": json_files,
+            "image_dirs": image_dirs}
 
 
 # ── Removal ──
@@ -183,14 +211,14 @@ def _clean_recent_files(lib_path):
     return removed
 
 
-def remove_remnants(lib_path, product_id, upid):
+def remove_remnants(lib_path, product_id, upid, extra_names=(), protected_names=()):
     """
     Remove the library's system registration. Returns (ok, details).
     ok is False if the HKLM key could not be removed — the caller must then leave the db
     alone, or Kontakt will simply re-register the library on its next launch.
     """
     details = []
-    remnants = find_remnants(lib_path, product_id, upid)
+    remnants = find_remnants(lib_path, product_id, upid, extra_names, protected_names)
 
     # ── HKLM product key: the one Kontakt re-registers from ──
     for name in remnants["reg_keys"]:
@@ -225,6 +253,14 @@ def remove_remnants(lib_path, product_id, upid):
             details.append(f"✓ Deleted {f}")
         except OSError as e:
             details.append(f"✗ Could not delete {f}: {e}")
+
+    # ── Library artwork + .meta in NI Resources ──
+    for d in remnants["image_dirs"]:
+        try:
+            shutil.rmtree(d)
+            details.append(f"✓ Deleted artwork folder {d}")
+        except OSError as e:
+            details.append(f"✗ Could not delete {d}: {e}")
 
     # ── Kontakt recent-files list ──
     try:
