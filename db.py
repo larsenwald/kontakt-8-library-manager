@@ -268,6 +268,54 @@ def delete_library(db_path, lib_id, delete_db=True, delete_files=False, delete_c
                 pass
 
 
+def set_bank_name(db_path, lib_id, new_name, changed_paths):
+    """
+    Point the given patches (files already renamed on disk) at bank `new_name`, keeping their
+    sub-levels, and refresh file_size / mod_date so the db matches the edited files.
+    Returns the number of patches updated.
+    """
+    wanted = {os.path.normcase(os.path.normpath(p)) for p in changed_paths}
+    conn = _open(db_path)
+    try:
+        _checkpoint(conn)
+        cur = conn.cursor()
+        _repair_fts(cur)
+        rows = [r for r in cur.execute(
+            "SELECT s.id, s.file_name, b.bcvendor, b.entry2, b.entry3 FROM k_sound_info s "
+            "JOIN k_bank_chain b ON b.id = s.bank_chain_id WHERE s.content_path_id = ?", (lib_id,))
+            if os.path.normcase(os.path.normpath(r[1])) in wanted]
+
+        with conn:
+            chains = {}
+            for sound_id, file_name, bcvendor, entry2, entry3 in rows:
+                key = (bcvendor or "", entry2, entry3)
+                if key not in chains:
+                    found = list(cur.execute(
+                        "SELECT id FROM k_bank_chain WHERE bcvendor = ? AND entry1 = ? "
+                        "AND entry2 IS ? AND entry3 IS ?", (key[0], new_name, entry2, entry3)))
+                    if found:
+                        chains[key] = found[0][0]
+                    else:
+                        cur.execute("INSERT INTO k_bank_chain(bcvendor, entry1, entry2, entry3) VALUES(?, ?, ?, ?)",
+                                    (key[0], new_name, entry2, entry3))
+                        chains[key] = conn.last_insert_rowid()
+                st = os.stat(file_name)
+                cur.execute("UPDATE k_sound_info SET bank_chain_id = ?, file_size = ?, mod_date = ? WHERE id = ?",
+                            (chains[key], st.st_size, int(st.st_mtime) * 1_000_000_000, sound_id))
+
+            # Bank chains nothing points at any more (e.g. the old 'Kontakt' one)
+            cur.execute("DELETE FROM k_bank_chain WHERE id NOT IN "
+                        "(SELECT bank_chain_id FROM k_sound_info WHERE bank_chain_id IS NOT NULL)")
+            # Kontakt's update_f_sound_info trigger runs AFTER the update, so its 'delete' reads the
+            # new bank name and desyncs the FTS index — rebuild it from v_sound_info instead
+            cur.execute("INSERT INTO f_sound_info(f_sound_info) VALUES('rebuild')")
+
+        _checkpoint(conn)
+        return len(rows)
+    finally:
+        conn.close()
+
+
 def _infer_vendor(path):
     known = [
         "Audio Imperia", "Heavyocity", "Keepforest", "Soundiron",

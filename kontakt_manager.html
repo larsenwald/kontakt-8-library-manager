@@ -747,6 +747,63 @@
   .btn-confirm-add:hover { filter: brightness(1.1); }
   .btn-confirm-add:disabled { opacity: 0.35; cursor: not-allowed; filter: none; }
 
+  /* ── LIBRARY NAME (patch bank) ── */
+  .field-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin: 16px 0 6px;
+  }
+
+  .text-input {
+    width: 100%;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text-hi);
+    background: var(--surface);
+    border: 1px solid var(--border-hi);
+    border-radius: 5px;
+    padding: 9px 12px;
+    outline: none;
+  }
+
+  .text-input:focus { border-color: var(--accent); }
+
+  .name-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+  .name-chip {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border-hi);
+    border-radius: 4px;
+    padding: 3px 8px;
+  }
+
+  .name-chip.default { color: var(--warn); border-color: #ffa50260; }
+
+  .detail-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+  .btn-rename {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    border-radius: 5px;
+    padding: 10px 20px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .btn-rename:hover { filter: brightness(1.15); }
+  .btn-rename:disabled { opacity: 0.3; cursor: not-allowed; filter: none; }
+
   /* ── STATUS TOAST ── */
   .toast {
     position: fixed;
@@ -964,6 +1021,26 @@
     <div class="modal-footer">
       <button class="btn-cancel" onclick="closeAddModal()">CANCEL</button>
       <button class="btn-confirm-add" id="btnConfirmAdd" onclick="confirmAdd()">ADD LIBRARY</button>
+    </div>
+  </div>
+</div>
+
+<!-- Set Library Name Modal -->
+<div class="modal-overlay" id="nameModalOverlay">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-add-icon">✎</div>
+      <div>
+        <div class="modal-title">Set Library Name</div>
+        <div class="modal-subtitle" id="nameModalLib">—</div>
+      </div>
+    </div>
+    <div class="modal-body" id="nameModalBody">
+      <!-- populated by JS -->
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel" onclick="closeNameModal()">CANCEL</button>
+      <button class="btn-confirm-add" id="btnConfirmName" onclick="confirmName()">RENAME PATCHES</button>
     </div>
   </div>
 </div>
@@ -1246,6 +1323,10 @@
             <div class="info-cell-label">UUID</div>
             <div class="info-cell-value dim">${lib.upid || '—'}</div>
           </div>
+          <div class="info-cell full">
+            <div class="info-cell-label">Library Name In Patches</div>
+            <div class="info-cell-value" id="patchNames">reading patches…</div>
+          </div>
         </div>
 
         ${canDelete ? '' : `
@@ -1258,11 +1339,26 @@
         <div class="footer-info">
           <span>${lib.preset_count}</span> presets · <span>${lib.product_id || 'no product id'}</span>
         </div>
-        <button class="btn-delete" onclick="openModal(${lib.id})" ${canDelete ? '' : 'disabled'}>
-          <span>⚠</span> REMOVE LIBRARY
-        </button>
+        <div class="detail-actions">
+          <button class="btn-rename" onclick="openNameModal(${lib.id})" ${canDelete ? '' : 'disabled'}>
+            SET LIBRARY NAME
+          </button>
+          <button class="btn-delete" onclick="openModal(${lib.id})" ${canDelete ? '' : 'disabled'}>
+            <span>⚠</span> REMOVE LIBRARY
+          </button>
+        </div>
       </div>
     `;
+    loadPatchNames(lib.id);
+  }
+
+  function loadPatchNames(id) {
+    window.pywebview.api.library_patches(id).then(r => {
+      const el = document.getElementById('patchNames');
+      if (!el || selectedId !== id) return;
+      if (!r.found || !r.folder_exists) { el.textContent = 'Library folder not found'; return; }
+      el.innerHTML = r.patches.total ? nameChips(r.patches) : '<span class="dim">No patches found</span>';
+    });
   }
 
   function inferVendor(path) {
@@ -1365,7 +1461,14 @@
               : 'KLib will register this library. Open Kontakt afterwards — it indexes the library on launch.'}</div>`
         : `<div class="modal-note error">${esc(info.message)}</div>`;
 
-      document.getElementById('addModalBody').innerHTML = grid + note;
+      const patches = info.ok && info.patches && info.patches.total ? `
+        <div class="field-label">Library name in patches</div>
+        ${nameChips(info.patches)}
+        ${defaultNameWarning(info.patches)}
+        <div class="field-label">Kontakt browser folder</div>
+        <input class="text-input" id="addLibName" value="${esc(suggestedName(info.patches, p.reg_key))}">` : '';
+
+      document.getElementById('addModalBody').innerHTML = grid + patches + note;
       document.getElementById('btnConfirmAdd').disabled = !info.ok;
       document.getElementById('addModalOverlay').classList.add('visible');
     });
@@ -1379,11 +1482,87 @@
   function confirmAdd() {
     const folder = pendingAddFolder;
     if (!folder) return;
+    const nameInput = document.getElementById('addLibName');
+    const libraryName = nameInput ? nameInput.value.trim() : null;
     closeAddModal();
-    window.pywebview.api.add_library(folder).then(result => {
+    window.pywebview.api.add_library(folder, libraryName || null).then(result => {
       showToast(result.message, result.success ? 'success' : 'error');
     });
   }
+
+  // ── LIBRARY NAME (stored in each patch; decides the Kontakt browser folder) ──
+  const DEFAULT_BANK = 'Kontakt';
+  let pendingNameId = null;
+
+  function nameChips(patches) {
+    const chips = Object.entries(patches.names)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, n]) => `<span class="name-chip ${name === DEFAULT_BANK ? 'default' : ''}">${esc(name || '(empty)')} · ${n}</span>`)
+      .join('');
+    const extra = [];
+    if (patches.not_editable) extra.push(`${patches.not_editable} multi/snapshot not editable yet`);
+    if (patches.unreadable) extra.push(`${patches.unreadable} unreadable`);
+    return `<div class="name-chips">${chips}</div>` +
+      (extra.length ? `<div class="info-cell-value dim" style="margin-top:6px">${extra.join(' · ')}</div>` : '');
+  }
+
+  function defaultNameWarning(patches) {
+    const n = patches.names[DEFAULT_BANK];
+    return n ? `<div class="modal-note error">${n} patch${n === 1 ? ' is' : 'es are'} labelled "Kontakt" — Kontakt would file ${n === 1 ? 'it' : 'them'} in its shared Kontakt folder. Set the library name below.</div>` : '';
+  }
+
+  function suggestedName(patches, fallback) {
+    const names = Object.keys(patches.names).filter(n => n && n !== DEFAULT_BANK);
+    return names.length === 1 ? names[0] : (fallback || '');
+  }
+
+  function openNameModal(id) {
+    const lib = libraries.find(l => l.id === id);
+    if (!lib) return;
+    window.pywebview.api.library_patches(id).then(r => {
+      pendingNameId = id;
+      document.getElementById('nameModalLib').textContent = lib.alias;
+      const body = document.getElementById('nameModalBody');
+      if (!r.found || !r.folder_exists || !r.patches.total) {
+        body.innerHTML = `<div class="modal-note error">${!r.folder_exists ? 'Library folder not found on disk.' : 'No patches found in this library.'}</div>`;
+        document.getElementById('btnConfirmName').disabled = true;
+      } else {
+        body.innerHTML = `
+          <div class="field-label" style="margin-top:0">Current library name in patches</div>
+          ${nameChips(r.patches)}
+          ${defaultNameWarning(r.patches)}
+          <div class="field-label">New library name</div>
+          <input class="text-input" id="newLibName" value="${esc(suggestedName(r.patches, lib.alias))}">
+          <div class="modal-note">KLib backs up each patch, renames it, and updates Kontakt's database. Close Kontakt first.</div>`;
+        document.getElementById('btnConfirmName').disabled = false;
+      }
+      document.getElementById('nameModalOverlay').classList.add('visible');
+    });
+  }
+
+  function closeNameModal() {
+    document.getElementById('nameModalOverlay').classList.remove('visible');
+    pendingNameId = null;
+  }
+
+  function confirmName() {
+    const id = pendingNameId;
+    const name = (document.getElementById('newLibName') || {}).value;
+    if (!id || !name || !name.trim()) return;
+    closeNameModal();
+    document.getElementById('loadingOverlay').classList.remove('hidden');
+    document.getElementById('loadingOverlay').querySelector('.loading-text').textContent = 'RENAMING PATCHES...';
+    window.pywebview.api.set_library_name(id, name.trim()).then(result => {
+      document.getElementById('loadingOverlay').classList.add('hidden');
+      document.getElementById('loadingOverlay').querySelector('.loading-text').textContent = 'READING DATABASE...';
+      showToast(result.message, result.success ? 'success' : 'error');
+      if (selectedId === id) loadPatchNames(id);
+    });
+  }
+
+  document.getElementById('nameModalOverlay').addEventListener('click', function(e) {
+    if (e.target === this) closeNameModal();
+  });
 
   document.getElementById('addModalOverlay').addEventListener('click', function(e) {
     if (e.target === this) closeAddModal();

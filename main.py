@@ -8,7 +8,8 @@ import os
 import subprocess
 import sys
 import webview
-from db import get_libraries, delete_library, default_db_path, is_kontakt_running
+from db import get_libraries, delete_library, default_db_path, is_kontakt_running, set_bank_name
+from patches import scan_library, set_library_name, summarize
 from cleanup import is_admin
 from register import inspect_folder, register_library
 
@@ -76,9 +77,10 @@ class KLibAPI:
         folder = result[0] if isinstance(result, (list, tuple)) else result
         info = inspect_folder(folder)
         info["folder"] = os.path.normpath(folder)
+        info["patches"] = summarize(scan_library(folder))
         return info
 
-    def add_library(self, folder):
+    def add_library(self, folder, library_name=None):
         db_path = self._db_path or default_db_path()
         if db_path and is_kontakt_running(db_path):
             return {
@@ -86,7 +88,56 @@ class KLibAPI:
                 "message": "Kontakt is open. Close it before adding libraries.",
                 "details": []
             }
-        return register_library(folder)
+        details = []
+        # Name the patches before Kontakt's first scan, so it files them correctly from the start
+        if library_name:
+            renamed = set_library_name(folder, library_name)
+            if renamed["failed"]:
+                return {"success": False,
+                        "message": f"Could not rename {len(renamed['failed'])} patch(es); nothing was registered.",
+                        "details": [f"✗ {rel}: {err}" for rel, err in renamed["failed"]]}
+            if renamed["changed"]:
+                details.append(f"✓ Set library name on {len(renamed['changed'])} patch(es) "
+                               f"(originals backed up to {renamed['backup_dir']})")
+        result = register_library(folder)
+        result["details"] = details + result["details"]
+        return result
+
+    # ── Library name stored in patches ──
+    def library_patches(self, lib_id):
+        lib = next((l for l in get_libraries(self._db_path) if l["id"] == lib_id), None) if self._db_path else None
+        if not lib:
+            return {"found": False}
+        return {"found": True, "folder_exists": os.path.isdir(lib["path"]),
+                "patches": summarize(scan_library(lib["path"]))}
+
+    def set_library_name(self, lib_id, new_name):
+        if not self._db_path:
+            return {"success": False, "message": "No database loaded.", "details": []}
+        if is_kontakt_running(self._db_path):
+            return {"success": False, "message": "Kontakt is open. Close it before renaming.", "details": []}
+        new_name = (new_name or "").strip()
+        lib = next((l for l in get_libraries(self._db_path) if l["id"] == lib_id), None)
+        if not lib or not new_name:
+            return {"success": False, "message": "Library not found or name empty.", "details": []}
+
+        renamed = set_library_name(lib["path"], new_name, label=lib["alias"])
+        changed_paths = [os.path.join(lib["path"], rel) for rel in renamed["changed"]]
+        details = [f"✗ {rel}: {err}" for rel, err in renamed["failed"]]
+        try:
+            updated = set_bank_name(self._db_path, lib_id, new_name, changed_paths) if changed_paths else 0
+        except Exception as e:
+            return {"success": False,
+                    "message": f"Patches were renamed but the database update failed: {e}",
+                    "details": details + [f"Originals: {renamed['backup_dir']}"]}
+        if renamed["skipped"]:
+            details.append(f"⚠ {len(renamed['skipped'])} multi/snapshot or unreadable file(s) left unchanged")
+        if not renamed["changed"]:
+            return {"success": True, "message": f"All patches already say '{new_name}'.", "details": details}
+        return {"success": not renamed["failed"],
+                "message": f"Renamed {len(renamed['changed'])} patch(es) to '{new_name}' "
+                           f"({updated} updated in Kontakt's database).",
+                "details": details + [f"Originals backed up to {renamed['backup_dir']}"]}
 
     # ── Delete a library ──
     def delete_library(self, lib_id, delete_db, delete_files, delete_cache):
